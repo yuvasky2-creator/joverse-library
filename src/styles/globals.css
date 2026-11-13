@@ -1,0 +1,665 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --color-bg: #09090b;
+    --color-bg-alt: #0e0e11;
+    --color-bg-card: rgba(24, 24, 28, 0.85);
+    --color-bg-glass: rgba(20, 20, 23, 0.7);
+    --color-border: rgba(255, 255, 255, 0.08);
+    --color-border-hover: rgba(255, 255, 255, 0.2);
+    --color-primary: #00d4ff;
+    --color-secondary: #7b61ff;
+    --color-success: #4ade80;
+    --color-accent: #00ff88;
+    --color-text: #f4f4f5;
+    --color-text-muted: #a1a1aa;
+    --color-low: #71717a;
+
+    /* Joverse Studio Development Master Palette */
+    --bg: #09090b;
+    --bg2: #0e0e11;
+    --s1: #141417;
+    --s2: #1a1a1f;
+    --line: rgba(255, 255, 255, 0.08);
+    --line2: rgba(255, 255, 255, 0.16);
+    --text: #f4f4f5;
+    --mid: #a1a1aa;
+    --low: #71717a;
+    --green: #4ade80;
+    --red: #f87171;
+    --cyan: #00d4ff;
+    --purple: #7b61ff;
+
+    --g-card: linear-gradient(160deg, #18181c 0%, #0f0f12 100%);
+    --g-card-hl: linear-gradient(160deg, #222227 0%, #111114 100%);
+    --g-text: linear-gradient(180deg, #ffffff 0%, #9a9aa3 100%);
+    --g-btn: linear-gradient(180deg, #ffffff 0%, #d4d4d8 100%);
+    --g-btn-cyan: linear-gradient(180deg, #ffffff 0%, #d4d4d8 100%);
+    --g-green: linear-gradient(180deg, #ffffff 0%, #d4d4d8 100%);
+    --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    font-family: 'Manrope', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+
+  ::selection {
+    background: rgba(255, 255, 255, 0.25);
+    color: #ffffff;
+  }
+
+  /* Custom dark scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #09090b;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.16);
+    border-radius: 999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.35);
+  }
+
+  button, .btn, a, [role="button"] {
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* UI Ambient Radial Lighting matching Joverse Studio Monochrome Design */
+.bgfx {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(900px 500px at 20% -10%, rgba(255, 255, 255, 0.05), transparent 60%),
+    radial-gradient(800px 500px at 80% 25%, rgba(255, 255, 255, 0.03), transparent 60%),
+    radial-gradient(1000px 600px at 50% 90%, rgba(255, 255, 255, 0.03), transparent 65%),
+    linear-gradient(180deg, #09090b 0%, #0c0c0f 50%, #09090b 100%);
+}
+
+/* Container wrapper matching Joverse Studio HTML */
+.wrap {
+  width: min(1180px, 100% - 32px);
+  margin-inline: auto;
+}
+
+/* Gradient Text matching Joverse Studio HTML */
+.gradient-text {
+  background: var(--g-text);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Pill Badge matching uupm.cc */
+.badge {
+  background: var(--color-bg-glass);
+  border: 1px solid var(--color-border);
+  border-radius: 50px;
+  padding: 7px 18px;
+  font-size: 0.825rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  backdrop-filter: blur(16px);
+  color: var(--color-text-muted);
+  transition: all 0.25s var(--ease);
+}
+.badge:hover {
+  border-color: var(--color-border-hover);
+  color: var(--color-text);
+  box-shadow: 0 0 20px rgba(0, 212, 255, 0.15);
+}
+
+/* Legacy pill alias */
+.pill {
+  @apply badge uppercase tracking-widest text-[11px];
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-success);
+  box-shadow: 0 0 12px var(--color-success);
+  animation: pulseDot 2s infinite;
+}
+
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.85); }
+}
+
+/* UI-UX Pro Max Glass Card */
+.glass-card {
+  background: var(--color-bg-card);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  transition: transform 0.3s var(--ease), border-color 0.25s var(--ease), box-shadow 0.3s var(--ease);
+  position: relative;
+}
+.glass-card:hover {
+  border-color: var(--color-border-hover);
+  box-shadow: 0 16px 40px -10px rgba(0, 0, 0, 0.7), 0 0 35px rgba(0, 212, 255, 0.12);
+  transform: translateY(-4px);
+}
+
+/* Alias card-joverse */
+.card-joverse {
+  @apply glass-card p-6;
+}
+
+/* Glow Helpers matching uupm.cc */
+.glow-primary {
+  box-shadow: 0 0 60px rgba(0, 212, 255, 0.2);
+}
+.glow-secondary {
+  box-shadow: 0 0 60px rgba(123, 97, 255, 0.2);
+}
+.glow-success {
+  box-shadow: 0 0 60px rgba(74, 222, 128, 0.2);
+}
+
+/* Primary Button with Neon Gradient (uupm.cc style) */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 28px;
+  border-radius: 9999px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 13.5px;
+  font-weight: 700;
+  background: linear-gradient(135deg, #00d4ff 0%, #4ade80 100%);
+  color: #06090e;
+  box-shadow: 0 0 24px rgba(0, 212, 255, 0.35), 0 1px 0 rgba(255, 255, 255, 0.6) inset;
+  transition: transform 0.25s var(--ease), box-shadow 0.25s var(--ease), filter 0.25s var(--ease);
+  cursor: pointer;
+  border: none;
+  text-decoration: none;
+}
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 36px rgba(0, 212, 255, 0.55), 0 1px 0 #ffffff inset;
+  filter: brightness(1.08);
+}
+.btn-primary:active {
+  transform: scale(0.97) translateY(0);
+}
+
+/* White Metallic Gradient Button from Joverse Studio Pricelist HTML */
+.btn-white, .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border-radius: 9999px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  background: var(--g-btn);
+  color: #09090b;
+  box-shadow: 0 1px 0 rgba(255,255,255,.6) inset, 0 8px 24px rgba(0,0,0,.4);
+  transition: transform .25s var(--ease), box-shadow .25s;
+  cursor: pointer;
+  border: none;
+  text-decoration: none;
+}
+.btn-white:hover, .btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 1px 0 #fff inset, 0 12px 30px rgba(255,255,255,.15);
+}
+.btn-white:active, .btn:active {
+  transform: scale(0.97) translateY(0);
+}
+
+/* Secondary Button (Glass Style) */
+.btn-secondary, .btn.ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border-radius: 9999px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  border: 1px solid var(--line2);
+  backdrop-filter: blur(16px);
+  transition: all 0.25s var(--ease);
+  cursor: pointer;
+  text-decoration: none;
+}
+.btn-secondary:hover, .btn.ghost:hover {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+  transform: translateY(-2px);
+  box-shadow: 0 0 25px rgba(255, 255, 255, 0.08);
+}
+.btn-secondary:active, .btn.ghost:active {
+  transform: scale(0.97) translateY(0);
+}
+
+/* Emerald Green Button */
+.btn.green {
+  background: linear-gradient(135deg, #4ade80 0%, #00bb7f 100%);
+  color: #06090e;
+  box-shadow: 0 0 24px rgba(74, 222, 128, 0.35), 0 1px 0 rgba(255, 255, 255, 0.6) inset;
+}
+.btn.green:hover {
+  box-shadow: 0 0 36px rgba(74, 222, 128, 0.55), 0 1px 0 #ffffff inset;
+  transform: translateY(-2px);
+}
+.btn.green:active {
+  transform: scale(0.97) translateY(0);
+}
+
+.btn.sm {
+  padding: 8px 18px;
+  font-size: 12px;
+}
+
+/* Headings with metallic silver text clip */
+h1, h2, .g-text {
+  background: var(--g-text);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-family: 'Sora', sans-serif;
+}
+
+/* Stats Container matching uupm.cc */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  background: rgba(14, 20, 33, 0.7);
+  overflow: hidden;
+  backdrop-filter: blur(16px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+.stat {
+  padding: 18px 30px;
+  text-align: center;
+}
+.stat + .stat {
+  border-left: 1px solid var(--color-border);
+}
+.stat b {
+  display: block;
+  font-family: 'Sora', sans-serif;
+  font-size: 15px;
+  color: #ffffff;
+  font-weight: 700;
+}
+.stat span {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+/* Infinite Marquee Ticker */
+.marquee {
+  border-block: 1px solid var(--color-border);
+  overflow: hidden;
+  padding: 18px 0;
+  background: var(--color-bg-alt);
+}
+.track {
+  display: flex;
+  width: max-content;
+  animation: slideMarquee 38s linear infinite;
+  will-change: transform;
+}
+.track:hover {
+  animation-play-state: paused;
+}
+.track span {
+  font-family: 'Sora', sans-serif;
+  font-weight: 600;
+  font-size: clamp(13px, 1.8vw, 16px);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  padding-right: 44px;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+}
+.track span::after {
+  content: "/";
+  margin-left: 44px;
+  color: rgba(255, 255, 255, 0.2);
+}
+
+@keyframes slideMarquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* Index / Tag */
+.idx {
+  font-family: 'Sora', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-primary);
+  letter-spacing: 0.14em;
+}
+
+/* Big Footer Watermark */
+.mega {
+  text-align: center;
+  overflow: hidden;
+  padding: 40px 0 10px;
+  font-family: 'Sora', sans-serif;
+  font-weight: 800;
+  font-size: clamp(48px, 14vw, 180px);
+  line-height: 0.92;
+  letter-spacing: -0.04em;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* Custom Sleek Slider with Cyan-Emerald Track */
+input[type=range] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  outline: none;
+  cursor: pointer;
+  transition: background 0.2s var(--ease);
+}
+input[type=range]:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #00d4ff;
+  cursor: pointer;
+  box-shadow: 0 0 16px rgba(0, 212, 255, 0.8), 0 2px 6px rgba(0,0,0,0.5);
+  border: 2px solid #06090e;
+  transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease), background 0.18s var(--ease);
+}
+input[type=range]::-webkit-slider-thumb:hover {
+  transform: scale(1.25);
+  background: #ffffff;
+  box-shadow: 0 0 24px rgba(0, 212, 255, 1), 0 3px 10px rgba(0,0,0,0.6);
+}
+input[type=range]:active::-webkit-slider-thumb {
+  transform: scale(1.1);
+  box-shadow: 0 0 28px rgba(0, 212, 255, 1);
+}
+
+/* Details Accordion */
+details {
+  border: 1px solid var(--color-border);
+  border-radius: 18px;
+  background: var(--color-bg-card);
+  transition: border-color 0.25s var(--ease), box-shadow 0.25s var(--ease);
+  overflow: hidden;
+}
+details[open] {
+  border-color: rgba(0, 212, 255, 0.35);
+  box-shadow: 0 0 25px rgba(0, 212, 255, 0.08);
+}
+summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 24px;
+  font-family: 'Sora', sans-serif;
+  font-size: 14.5px;
+  font-weight: 600;
+  user-select: none;
+  transition: color 0.2s var(--ease);
+}
+summary:hover {
+  color: var(--color-primary);
+}
+summary::-webkit-details-marker {
+  display: none;
+}
+summary::after {
+  content: "+";
+  font-size: 20px;
+  font-weight: 400;
+  color: var(--color-text-muted);
+  transition: transform 0.3s var(--ease);
+}
+details[open] summary::after {
+  transform: rotate(45deg);
+  color: var(--color-primary);
+}
+
+@media (max-width: 640px) {
+  .stats {
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+  .stat + .stat {
+    border-left: 0;
+    border-top: 1px solid var(--color-border);
+  }
+}
+
+/* ==========================================================================
+   BloomArts (Image 1) Luminous Ethereal Atmosphere & Aurora Ray
+   ========================================================================== */
+.bloom-ambient {
+  position: absolute;
+  top: -80px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(1200px, 100vw);
+  height: 520px;
+  background: radial-gradient(ellipse 65% 85% at 50% 0%, rgba(74, 222, 128, 0.22) 0%, rgba(0, 212, 255, 0.14) 40%, transparent 75%);
+  filter: blur(60px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.bloom-light-beam {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 140px;
+  height: 440px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, rgba(74, 222, 128, 0.35) 25%, rgba(0, 212, 255, 0.12) 65%, transparent 100%);
+  filter: blur(32px);
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.9;
+}
+
+/* ==========================================================================
+   Image 3: Layered 3D Dark Glass Cards with Intense Lime Underglow
+   ========================================================================== */
+.card-underglow {
+  position: relative;
+  background: rgba(14, 20, 33, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s ease;
+}
+
+.card-underglow::after {
+  content: "";
+  position: absolute;
+  bottom: -14px;
+  left: 12%;
+  right: 12%;
+  height: 28px;
+  background: radial-gradient(ellipse at center, rgba(74, 222, 128, 0.5) 0%, rgba(0, 212, 255, 0.3) 45%, transparent 75%);
+  filter: blur(16px);
+  pointer-events: none;
+  opacity: 0.75;
+  transition: opacity 0.3s ease, filter 0.3s ease;
+  z-index: -1;
+}
+
+.card-underglow:hover {
+  transform: translateY(-4px);
+  border-color: rgba(74, 222, 128, 0.4);
+  box-shadow: 0 20px 48px -12px rgba(0, 0, 0, 0.7), 0 0 35px rgba(74, 222, 128, 0.2);
+}
+
+.card-underglow:hover::after {
+  opacity: 1;
+  filter: blur(22px);
+}
+
+/* ==========================================================================
+   SoundForge Pro (Image 2) Studio DAW Styling Tokens
+   ========================================================================== */
+.soundforge-frame {
+  background: linear-gradient(180deg, #0e121a 0%, #070a0f 100%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  box-shadow: 0 24px 64px -12px rgba(0, 0, 0, 0.85), 0 0 40px rgba(123, 97, 255, 0.12);
+  position: relative;
+  overflow: hidden;
+}
+
+.soundforge-topbar {
+  background: rgba(14, 20, 33, 0.95);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 12px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.soundforge-rail-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+  text-align: left;
+}
+
+.soundforge-rail-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.soundforge-rail-btn.active {
+  color: #00d4ff;
+  background: linear-gradient(90deg, rgba(0, 212, 255, 0.14) 0%, rgba(123, 97, 255, 0.08) 100%);
+  border-color: rgba(0, 212, 255, 0.35);
+  box-shadow: 0 0 20px rgba(0, 212, 255, 0.15);
+}
+
+.soundforge-transport {
+  background: rgba(10, 14, 23, 0.95);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 12px 20px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.soundforge-dock {
+  background: #06090e;
+  padding: 10px 20px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11.5px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.stepper-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 11.5px;
+}
+
+.stepper-box input {
+  background: transparent;
+  border: none;
+  color: #00d4ff;
+  font-weight: 700;
+  width: 72px;
+  text-align: center;
+  outline: none;
+}
+

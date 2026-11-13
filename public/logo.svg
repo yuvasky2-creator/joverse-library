@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <defs>
+    <linearGradient id="joverseGrad" x1="4" y1="4" x2="44" y2="44" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#39E58C" />
+      <stop offset="100%" stop-color="#188C56" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+  
+  <!-- Outer Modern Geometric Housing -->
+  <rect x="2" y="2" width="44" height="44" rx="12" fill="#121613" stroke="#252D28" stroke-width="1.5" />
+  
+  <!-- Soundwave Equalizer Geometric Symbol forming 'J' & Waveform Pulse -->
+  <rect x="10" y="20" width="4" height="8" rx="2" fill="#39E58C" fill-opacity="0.4" />
+  <rect x="17" y="14" width="4" height="20" rx="2" fill="#39E58C" fill-opacity="0.75" />
+  <rect x="24" y="9" width="4" height="30" rx="2" fill="url(#joverseGrad)" />
+  <rect x="31" y="16" width="4" height="16" rx="2" fill="#39E58C" fill-opacity="0.75" />
+  <rect x="38" y="22" width="4" height="4" rx="2" fill="#39E58C" fill-opacity="0.4" />
+
+  <!-- Core Sound Signal Dot -->
+  <circle cx="26" cy="24" r="1.5" fill="#FFFFFF" />
+</svg>
