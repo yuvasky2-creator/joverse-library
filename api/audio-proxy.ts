@@ -3,21 +3,20 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Range, Content-Type, Accept");
+  res.setHeader("Access-Control-Allow-Headers", "Range, Content-Type, Accept, Authorization");
+  res.setHeader("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges, Content-Type");
 
   if (req.method === "OPTIONS") {
     return res.status(200).end();
   }
 
-  const rawUrl = req.query.url as string;
+  const rawUrl = (req.query.url as string)?.trim();
   if (!rawUrl) {
     return res.status(400).json({ error: "Parameter url diperlukan." });
   }
 
   try {
     const targetUrl = decodeURIComponent(rawUrl);
-
-    // Validasi URL
     const parsed = new URL(targetUrl);
     if (!["http:", "https:"].includes(parsed.protocol)) {
       return res.status(400).json({ error: "Protokol URL tidak valid." });
@@ -25,8 +24,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const rangeHeader = req.headers.range;
     const fetchHeaders: Record<string, string> = {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      Accept: "*/*",
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+      Accept: "audio/*, video/*, */*",
     };
     if (rangeHeader) {
       fetchHeaders["Range"] = rangeHeader;
@@ -34,6 +34,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const upstream = await fetch(targetUrl, {
       headers: fetchHeaders,
+      redirect: "follow",
     });
 
     if (!upstream.ok && upstream.status !== 206) {
@@ -42,7 +43,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const contentType = upstream.headers.get("content-type") || "audio/mpeg";
+    const upstreamType = upstream.headers.get("content-type");
+    const contentType =
+      upstreamType && upstreamType.includes("audio")
+        ? upstreamType
+        : targetUrl.endsWith(".ogg")
+        ? "audio/ogg"
+        : targetUrl.endsWith(".wav")
+        ? "audio/wav"
+        : targetUrl.endsWith(".flac")
+        ? "audio/flac"
+        : "audio/mpeg";
+
     const contentLength = upstream.headers.get("content-length");
     const contentRange = upstream.headers.get("content-range");
     const acceptRanges = upstream.headers.get("accept-ranges") || "bytes";
@@ -54,13 +66,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     res.status(upstream.status);
 
-    if (upstream.body) {
-      // Stream langsung data binary ke client
-      const arrayBuffer = await upstream.arrayBuffer();
-      return res.send(Buffer.from(arrayBuffer));
-    } else {
-      return res.end();
-    }
+    const arrayBuffer = await upstream.arrayBuffer();
+    return res.send(Buffer.from(arrayBuffer));
   } catch (err: any) {
     console.error("Audio proxy error:", err);
     return res.status(500).json({ error: "Gagal mem-proxy audio", details: err.message });

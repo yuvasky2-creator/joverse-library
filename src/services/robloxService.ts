@@ -31,7 +31,7 @@ export async function fetchRobloxPortfolio(forceRefresh = false): Promise<Realti
   }
 
   try {
-    const res = await fetch("/api/roblox", {
+    const res = await fetch("/api/roblox/game-info", {
       headers: {
         Accept: "application/json",
       },
@@ -46,10 +46,27 @@ export async function fetchRobloxPortfolio(forceRefresh = false): Promise<Realti
       }
     }
   } catch (err) {
-    console.warn("Gagal memanggil /api/roblox:", err);
+    console.warn("Gagal memanggil /api/roblox/game-info, mencoba fallback:", err);
   }
 
-  // Fallback map resmi Joverse Studio jika API serverless sedang proses
+  // Coba route langsung /api/roblox jika rewrite belum reload
+  try {
+    const fallbackRes = await fetch("/api/roblox", {
+      headers: { Accept: "application/json" },
+    });
+    if (fallbackRes.ok) {
+      const data = await fallbackRes.json();
+      if (data && Array.isArray(data.maps) && data.maps.length > 0) {
+        cachedMaps = data.maps;
+        lastFetchTime = now;
+        return data.maps;
+      }
+    }
+  } catch {
+    // Ignore and proceed to static fallback
+  }
+
+  // Fallback map resmi Joverse Studio jika koneksi offline / development lokal
   return [
     {
       id: "pf-naresta",

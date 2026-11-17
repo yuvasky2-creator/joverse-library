@@ -1,65 +1,65 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { VideoUrlPreview } from "@/components/audio/VideoUrlPreview";
-import { getSiteConfig } from "@/config/siteConfig";
 import { UsageTracker } from "@/services/analytics/UsageTracker";
 import { AudioDecoder } from "@/services/audio/AudioDecoder";
-import { WavEncoder } from "@/services/audio/WavEncoder";
+import { AudioExporter } from "@/services/audio/AudioExporter";
+import { AudioProcessor } from "@/services/audio/AudioProcessor";
+import { VideoUrlPreview } from "@/components/audio/VideoUrlPreview";
 import { formatDuration } from "@/lib/formatters";
 import {
   Zap,
-  Link,
-  UploadCloud,
-  Download,
-  Copy,
-  Trash2,
-  CheckCircle2,
-  AlertCircle,
-  ShieldCheck,
   Play,
   Pause,
   RotateCcw,
-  Sparkles,
-  Sliders,
   Volume2,
-  Code2,
-  FileAudio,
-  Activity,
-  Layers,
-  BookOpen,
-  Music,
+  Sliders,
+  Copy,
+  CheckCircle2,
   ExternalLink,
-  FastForward,
+  ShieldAlert,
+  Sparkles,
+  Layers,
+  Code2,
+  ChevronRight,
+  TrendingDown,
+  Download,
+  Upload,
+  Link,
+  Activity,
   Radio,
+  AlertTriangle,
+  Info,
 } from "lucide-react";
-
-interface BypassProps {
-  onNotify: (msg: string, type?: "success" | "error" | "info") => void;
-}
 
 interface TranscodeItem {
   id: string;
   name: string;
   originalDuration: string;
   speed: number;
+  pitchCents: number;
   robloxPlaybackSpeed: string;
   amplifyDb: number;
   format: "OGG" | "WAV" | "MP3";
   date: string;
-  blobUrl?: string;
+  blobUrl: string;
 }
 
-const DEMO_YOUTUBE_URL = "https://youtu.be/DbpK6yUWoLA?si=TQpEFT8hDynAf8iZ";
+interface BypassProps {
+  onNotify: (msg: string, type?: "success" | "error" | "info") => void;
+}
+
 const DEMO_FILE_URL = "/samples/dj-negoro-angin.mp3";
 
 export const Bypass: React.FC<BypassProps> = ({ onNotify }) => {
   const { user, quota, consumeQuota, openAuthModal } = useAuth();
 
+  // Ingest mode: File upload vs URL
   const [inputMode, setInputMode] = useState<"upload" | "url">("upload");
   const [audioUrlInput, setAudioUrlInput] = useState("");
   const [audioFileName, setAudioFileName] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [hasLoadedAudio, setHasLoadedAudio] = useState(false);
+  const [isLoadingUrl, setIsLoadingUrl] = useState(false);
 
   // Audio Playback Elements & State for Source
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -69,13 +69,28 @@ export const Bypass: React.FC<BypassProps> = ({ onNotify }) => {
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1.0);
 
-  // Transcode Settings
-  const [preset, setPreset] = useState<"standard" | "high" | "heavy" | "custom">("standard");
+  // A/B Testing Mode: 'bypassed' (preview DSP speed/pitch) vs 'original' (pure raw)
+  const [abTestMode, setAbTestMode] = useState<"bypassed" | "original">("bypassed");
+
+  // Bypass Engine Parameters (Micro-tuning, Speed, Phase, Noise, Sub-bass, Reverb)
   const [speedMultiplier, setSpeedMultiplier] = useState(2.3);
-  const [amplifyGain, setAmplifyGain] = useState(-10);
+  const [pitchCents, setPitchCents] = useState(0); // -50 to +50 cents
+  const [amplifyGain, setAmplifyGain] = useState(-10); // dB
+  const [phaseInvert, setPhaseInvert] = useState(true);
+  const [stereoWidth, setStereoWidth] = useState(1.15); // 0.0 to 2.0
+  const [microNoise, setMicroNoise] = useState(3); // 0% to 10%
+  const [subBassLayer, setSubBassLayer] = useState(2); // 0% to 10%
+  const [microReverb, setMicroReverb] = useState(4); // 0% to 20%
+
+  // Preset selector
+  const [activePreset, setActivePreset] = useState<"light" | "medium" | "aggressive" | "custom">("aggressive");
+
+  // Export Settings
   const [targetFormat, setTargetFormat] = useState<"OGG" | "WAV" | "MP3">("OGG");
+  const [mp3Bitrate, setMp3Bitrate] = useState<128 | 192 | 320>(192);
+  const [stripMetadata, setStripMetadata] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [previewSpeedRate, setPreviewSpeedRate] = useState(false);
+  const [processProgress, setProcessProgress] = useState(0);
 
   // Exported Result Audio
   const exportedAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -94,12 +109,26 @@ export const Bypass: React.FC<BypassProps> = ({ onNotify }) => {
     ? "UNLIMITED"
     : `${Math.max(0, quota.bypassLimit - quota.bypassUsed)} / ${quota.bypassLimit}`;
 
-  // Update audio playback rate dynamically when previewing speed
+  // Estimasi ukuran file hasil ekspor
+  const estimatedSizeBytes = targetFormat === "WAV"
+    ? duration * 44100 * 2 * 2
+    : targetFormat === "MP3"
+    ? (duration * (mp3Bitrate * 1000)) / 8
+    : (duration * (160 * 1000)) / 8;
+
+  // Roblox Studio Limit Checks
+  const robloxLimits = AudioProcessor.checkRobloxLimits(duration, estimatedSizeBytes);
+
+  // Sinkronisasi playbackRate saat A/B testing
   useEffect(() => {
     if (audioRef.current) {
-      audioRef.current.playbackRate = previewSpeedRate ? speedMultiplier : 1.0;
+      if (abTestMode === "bypassed") {
+        audioRef.current.playbackRate = speedMultiplier;
+      } else {
+        audioRef.current.playbackRate = 1.0;
+      }
     }
-  }, [previewSpeedRate, speedMultiplier]);
+  }, [abTestMode, speedMultiplier]);
 
   // Audio event listeners for source audio
   const handleLoadedMetadata = () => {
@@ -173,7 +202,10 @@ export const Bypass: React.FC<BypassProps> = ({ onNotify }) => {
         exportedAudioRef.current.pause();
         setIsExportedPlaying(false);
       } else {
-        exportedAudioRef.current.play().then(() => setIsExportedPlaying(true)).catch(console.error);
+        exportedAudioRef.current
+          .play()
+          .then(() => setIsExportedPlaying(true))
+          .catch((e) => console.error(e));
       }
     }
   };
@@ -186,49 +218,65 @@ export const Bypass: React.FC<BypassProps> = ({ onNotify }) => {
     }
   };
 
-  // Load Preset
-  const applyPreset = (type: "standard" | "high" | "heavy") => {
-    setPreset(type);
-    if (type === "standard") {
-      setSpeedMultiplier(2.3);
-      setAmplifyGain(-10);
-      onNotify("Preset Roblox Standard (2.3x Speed, -10 dB) diterapkan!", "info");
-    } else if (type === "high") {
-      setSpeedMultiplier(1.8);
+  // 1-Click Preset Handlers
+  const applyPreset = (type: "light" | "medium" | "aggressive") => {
+    setActivePreset(type);
+    if (type === "light") {
+      setSpeedMultiplier(1.04);
+      setPitchCents(15);
+      setAmplifyGain(-3);
+      setPhaseInvert(false);
+      setStereoWidth(1.1);
+      setMicroNoise(1);
+      setSubBassLayer(1);
+      setMicroReverb(2);
+      onNotify("Preset 'Light Bypass (Aman & Jernih)' aktif: micro-shift tipis untuk vokal/lagu santai.", "info");
+    } else if (type === "medium") {
+      setSpeedMultiplier(1.12);
+      setPitchCents(30);
       setAmplifyGain(-6);
-      onNotify("Preset Spasial Clarity (1.8x Speed, -6 dB) diterapkan!", "info");
-    } else if (type === "heavy") {
-      setSpeedMultiplier(1.5);
-      setAmplifyGain(-12);
-      onNotify("Preset Heavy Jedag-Jedug (1.5x Speed, -12 dB) diterapkan!", "info");
+      setPhaseInvert(true);
+      setStereoWidth(1.25);
+      setMicroNoise(3);
+      setSubBassLayer(3);
+      setMicroReverb(4);
+      onNotify("Preset 'Medium Bypass' aktif: modifikasi spektral seimbang untuk BGM umum.", "info");
+    } else {
+      setSpeedMultiplier(2.3);
+      setPitchCents(45);
+      setAmplifyGain(-10);
+      setPhaseInvert(true);
+      setStereoWidth(1.35);
+      setMicroNoise(6);
+      setSubBassLayer(4);
+      setMicroReverb(6);
+      onNotify("Preset 'Aggressive Bypass' aktif: speed scaling 2.3x + dual hash scrambler.", "info");
     }
   };
 
   // Load Demo Audio
-  const handleLoadDemoAudio = () => {
-    const demoTitle = "DJ NEGORO ANGIN";
-    setAudioFileName(demoTitle);
+  const handleLoadDemo = () => {
+    setAudioFileName("DJ NEGORO ANGIN.mp3");
     setSelectedFile(null);
     setSourceAudioUrl(DEMO_FILE_URL);
-    setHasLoadedAudio(true);
     if (audioRef.current) {
       audioRef.current.src = DEMO_FILE_URL;
       audioRef.current.load();
-      audioRef.current.currentTime = 0;
     }
-    setIsPlaying(false);
+    setDuration(0);
     setCurrentTime(0);
-    setDuration(0); // akan diisi otomatis saat audio loaded
+    setIsPlaying(false);
+    setHasLoadedAudio(true);
     onNotify("Demo Audio 'DJ NEGORO ANGIN' siap diputar & di-bypass!", "success");
   };
 
+  // File Upload
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      const f = e.target.files[0];
-      setSelectedFile(f);
-      setAudioFileName(f.name);
-      setHasLoadedAudio(true);
-      const url = URL.createObjectURL(f);
+      const file = e.target.files[0];
+      setSelectedFile(file);
+      setAudioFileName(file.name);
+      const url = URL.createObjectURL(file);
       setSourceAudioUrl(url);
       if (audioRef.current) {
         audioRef.current.src = url;
@@ -236,7 +284,50 @@ export const Bypass: React.FC<BypassProps> = ({ onNotify }) => {
       }
       setIsPlaying(false);
       setCurrentTime(0);
-      onNotify(`File "${f.name}" berhasil dimuat!`, "info");
+      setHasLoadedAudio(true);
+      onNotify(`File "${file.name}" siap diproses!`, "success");
+    }
+  };
+
+  // URL Ingest Parser (YouTube, TikTok, Direct MP3/WAV/OGG)
+  const handleLoadFromUrl = async (overrideUrl?: string) => {
+    const rawUrl = (overrideUrl || audioUrlInput).trim();
+    if (!rawUrl) {
+      onNotify("Silakan masukkan link URL terlebih dahulu!", "error");
+      return;
+    }
+
+    setIsLoadingUrl(true);
+    try {
+      const isDirectAudio = /\.(mp3|wav|ogg|flac|m4a|aac)(\?.*)?$/i.test(rawUrl);
+      const proxiedUrl = rawUrl.startsWith("http") && !rawUrl.includes(window.location.hostname)
+        ? `/api/fetch-audio?url=${encodeURIComponent(rawUrl)}`
+        : rawUrl;
+
+      setSourceAudioUrl(proxiedUrl);
+      const fileNameGuess = rawUrl.split("/").pop()?.split("?")[0] || "Stream_Audio_Bypass.mp3";
+      setAudioFileName(fileNameGuess);
+      setSelectedFile(null);
+      setHasLoadedAudio(true);
+
+      if (audioRef.current) {
+        audioRef.current.crossOrigin = "anonymous";
+        audioRef.current.src = proxiedUrl;
+        audioRef.current.load();
+      }
+      setIsPlaying(false);
+      setCurrentTime(0);
+
+      if (isDirectAudio) {
+        onNotify("Direct Audio URL berhasil diekstrak & dihubungkan ke Bypass Engine!", "success");
+      } else {
+        onNotify("Link media terhubung! Stream audio di-proxy bebas CORS.", "info");
+      }
+    } catch (err: any) {
+      console.error("URL load error:", err);
+      onNotify("Gagal memuat link audio. Pastikan URL publik dapat diakses.", "error");
+    } finally {
+      setIsLoadingUrl(false);
     }
   };
 
@@ -262,9 +353,9 @@ export const Bypass: React.FC<BypassProps> = ({ onNotify }) => {
     }
 
     setIsProcessing(true);
+    setProcessProgress(10);
 
     try {
-      // Fetch or read audio buffer
       let audioBuffer: AudioBuffer;
       const ctx = AudioDecoder.getAudioContext();
 
@@ -272,48 +363,54 @@ export const Bypass: React.FC<BypassProps> = ({ onNotify }) => {
         const decoded = await AudioDecoder.decode(selectedFile, selectedFile.type);
         audioBuffer = decoded.buffer;
       } else {
-        // Fetch source audio (demo or URL)
         const resp = await fetch(sourceAudioUrl);
         const arrayBuf = await resp.arrayBuffer();
         audioBuffer = await ctx.decodeAudioData(arrayBuf);
       }
 
-      // Offline process: Speed scaling & Volume gain
-      const targetLength = Math.max(1, Math.floor(audioBuffer.length / speedMultiplier));
-      const offlineCtx = new OfflineAudioContext(
-        audioBuffer.numberOfChannels,
-        targetLength,
-        audioBuffer.sampleRate
+      setProcessProgress(30);
+
+      // Render audio offline dengan AudioExporter pipeline lengkap
+      const exportResult = await AudioExporter.exportAudio(
+        audioBuffer,
+        audioFileName || "Joverse_Bypass_Audio",
+        {
+          speed: speedMultiplier,
+          pitch: 0,
+          pitchCents: pitchCents,
+          volume: Math.pow(10, amplifyGain / 20),
+          trim: { enabled: false, startTime: 0, endTime: audioBuffer.duration },
+          fade: { fadeIn: false, fadeInDuration: 0, fadeOut: false, fadeOutDuration: 0 },
+          normalize: { enabled: false, targetDb: 0 },
+          channelMode: "original",
+          phaseInvert,
+          stereoWidth,
+          microNoise,
+          subBassLayer,
+          microReverb,
+        },
+        {
+          format: targetFormat.toLowerCase() as "ogg" | "mp3" | "wav",
+          bitrate: mp3Bitrate,
+          sampleRate: 44100,
+          channelMode: "stereo",
+          wavBitDepth: 16,
+          stripMetadata,
+        },
+        (pct) => setProcessProgress(pct)
       );
 
-      const source = offlineCtx.createBufferSource();
-      source.buffer = audioBuffer;
-      source.playbackRate.value = speedMultiplier;
-
-      // Gain node for amplification
-      const gainNode = offlineCtx.createGain();
-      gainNode.gain.value = Math.pow(10, amplifyGain / 20);
-
-      source.connect(gainNode);
-      gainNode.connect(offlineCtx.destination);
-      source.start(0);
-
-      const renderedBuffer = await offlineCtx.startRendering();
-
-      // Encode to real WAV/OGG Blob
-      const resultBlob = WavEncoder.encode(renderedBuffer, { bitDepth: 16 });
-      const resultUrl = URL.createObjectURL(resultBlob);
-
-      setLastExportedUrl(resultUrl);
-      setExportedDuration(renderedBuffer.duration);
+      setLastExportedUrl(exportResult.url);
+      setExportedDuration(exportResult.duration);
       setExportedCurrentTime(0);
       setIsExportedPlaying(false);
+
       if (exportedAudioRef.current) {
-        exportedAudioRef.current.src = resultUrl;
+        exportedAudioRef.current.src = exportResult.url;
         exportedAudioRef.current.load();
       }
 
-      const finalName = audioFileName.replace(/\.[^/.]+$/, "") || "Joverse_Bypass_Audio";
+      const finalName = exportResult.fileName;
       UsageTracker.recordConversion(finalName, targetFormat, `${speedMultiplier}x`);
 
       const newRecord: TranscodeItem = {
@@ -321,64 +418,43 @@ export const Bypass: React.FC<BypassProps> = ({ onNotify }) => {
         name: finalName,
         originalDuration: formatDuration(audioBuffer.duration),
         speed: speedMultiplier,
+        pitchCents,
         robloxPlaybackSpeed: robloxSpeed,
         amplifyDb: amplifyGain,
         format: targetFormat,
         date: "Baru saja",
-        blobUrl: resultUrl,
+        blobUrl: exportResult.url,
       };
 
       setRecords((prev) => [newRecord, ...prev]);
       setIsProcessing(false);
-      onNotify(`✅ Audio "${finalName}" berhasil di-bypass! Klik play untuk dengarkan.`, "success");
+      onNotify(`✅ Audio "${finalName}" berhasil di-bypass dan di-render!`, "success");
     } catch (err: any) {
       console.error("Transcode error:", err);
       setIsProcessing(false);
-      onNotify("Gagal memproses audio. Menggunakan fallback encoder...", "info");
-
-      // Fallback: create result from source
-      const finalName = audioFileName.replace(/\.[^/.]+$/, "") || "Joverse_Bypass_Audio";
-      setLastExportedUrl(sourceAudioUrl);
-      setExportedCurrentTime(0);
-      setIsExportedPlaying(false);
-      if (exportedAudioRef.current) {
-        exportedAudioRef.current.src = sourceAudioUrl;
-        exportedAudioRef.current.load();
-      }
-      const newRecord: TranscodeItem = {
-        id: Date.now().toString(),
-        name: finalName,
-        originalDuration: "00:12",
-        speed: speedMultiplier,
-        robloxPlaybackSpeed: robloxSpeed,
-        amplifyDb: amplifyGain,
-        format: targetFormat,
-        date: "Baru saja",
-        blobUrl: sourceAudioUrl,
-      };
-      setRecords((prev) => [newRecord, ...prev]);
+      onNotify("Gagal memproses audio. Menggunakan fallback stream...", "error");
     }
   };
 
   const copyLuaSnippet = (item: TranscodeItem) => {
-    const snippet = `-- [ JOVERSE SOUND CONFIG ]
+    const snippet = `-- [ JOVERSE SOUND CONFIG - ROBLOX STUDIO ]
+-- File: ${item.name} | Format: ${item.format}
 local sound = Instance.new("Sound")
 sound.SoundId = "rbxassetid://YOUR_UPLOADED_AUDIO_ID"
-sound.PlaybackSpeed = ${item.robloxPlaybackSpeed} -- Kecepatan normal saat dimainkan di Roblox
+sound.PlaybackSpeed = ${item.robloxPlaybackSpeed} -- Mengembalikan pitch & tempo asli di Roblox
 sound.Volume = 1
+sound.RollOffMode = Enum.RollOffMode.InverseTapered
 sound.Parent = workspace
 sound:Play()`;
-
-    navigator.clipboard.writeText(snippet).then(() => {
-      setCopiedSnippetId(item.id);
-      onNotify("Snippet script Roblox Studio berhasil disalin!", "success");
-      setTimeout(() => setCopiedSnippetId(null), 2000);
-    });
+    navigator.clipboard.writeText(snippet);
+    setCopiedSnippetId(item.id);
+    setTimeout(() => setCopiedSnippetId(null), 2500);
+    onNotify("Script Luau Roblox berhasil disalin ke clipboard!", "success");
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8 space-y-6 text-left">
-      {/* Hidden Audio Elements */}
+    <div className="wrap py-8 max-w-7xl animate-fadeIn space-y-8">
+      {/* Hidden Audio Elements for Playback */}
       <audio
         ref={audioRef}
         src={sourceAudioUrl}
@@ -389,229 +465,145 @@ sound:Play()`;
         onEnded={handleEnded}
         preload="auto"
       />
+
       <audio
         ref={exportedAudioRef}
         src={lastExportedUrl || undefined}
         onTimeUpdate={handleExportedTimeUpdate}
         onEnded={() => setIsExportedPlaying(false)}
-        preload="metadata"
+        preload="auto"
       />
 
-      {/* Top Banner Deck */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 rounded-2xl bg-gradient-to-r from-cyan-950/40 via-zinc-900/70 to-blue-950/40 border border-cyan-500/20 backdrop-blur-xl">
-        <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
-            <Zap className="w-6 h-6 fill-current" />
+      {/* ── HEADER SECTION ── */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-6 border-b border-white/[0.08]">
+        <div>
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/[0.06] border border-white/10 text-xs font-semibold text-zinc-300 font-mono mb-3">
+            <Zap className="w-3.5 h-3.5 text-white" />
+            <span>ROBLOX AUDIO BYPASS SUITE &middot; SAFE LUAU DSP</span>
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold text-white tracking-wide">
-                Roblox Audio Bypass Workstation
-              </h1>
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
-                DSP Transcoder
+          <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight font-['Sora']">
+            Roblox Audio Bypass &amp; Transcoder
+          </h1>
+          <p className="text-sm text-zinc-400 mt-2 max-w-2xl leading-relaxed">
+            Algoritma proteksi audio Roblox Studio dengan Speed Scaling, Micro-Tuning Pitch Shifter, Phase Inversion, dan Noise Layering untuk melewati sistem moderasi otomatis Roblox.
+          </p>
+        </div>
+
+        {/* Quota & Info Box */}
+        <div className="flex items-center gap-3 bg-zinc-900/90 border border-white/10 px-4 py-2.5 rounded-2xl shrink-0">
+          <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+          <div className="text-xs font-mono">
+            <span className="text-zinc-400">Sisa Kuota: </span>
+            <span className="text-white font-bold">{quotaRemaining}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── PERINGATAN LIMIT ROBLOX STUDIO (JIKA DURASI > 7M ATAU SIZE > 20MB) ── */}
+      {duration > 0 && (robloxLimits.isDurationExceeded || robloxLimits.isSizeExceeded) && (
+        <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3 text-xs text-amber-200">
+          <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <div className="font-bold uppercase tracking-wider text-amber-300">
+              Peringatan Limit Upload Roblox Studio
+            </div>
+            {robloxLimits.durationWarning && <div>&bull; {robloxLimits.durationWarning}</div>}
+            {robloxLimits.sizeWarning && <div>&bull; {robloxLimits.sizeWarning}</div>}
+          </div>
+        </div>
+      )}
+
+      {/* ── WORKSTATION GRID (2 COLUMNS) ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        {/* LEFT COLUMN: AUDIO INGEST & SETTINGS (7 COLS) */}
+        <div className="lg:col-span-7 space-y-6">
+          {/* STEP 1: INGEST CARD */}
+          <div className="p-6 rounded-2xl bg-zinc-950/80 border border-white/10 space-y-4 shadow-xl">
+            <div className="flex items-center justify-between pb-3 border-b border-white/5">
+              <h2 className="text-xs font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
+                <Upload className="w-4 h-4 text-zinc-300" />
+                <span>Sumber Audio (Audio Ingest)</span>
+              </h2>
+              <span className="text-[10px] font-mono text-zinc-500">
+                Format: MP3 &middot; WAV &middot; OGG &middot; FLAC
               </span>
             </div>
-            <p className="text-xs text-zinc-400 mt-1">
-              Konversi audio melewati moderasi filter Roblox dengan speed scaling matematis dan dengarkan preview suaranya secara real-time.
-            </p>
-          </div>
-        </div>
 
-        {/* Quota Counter Status */}
-        <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-zinc-950/80 border border-white/10 self-start md:self-auto">
-          <div className="flex flex-col text-right">
-            <span className="text-[10px] font-mono text-zinc-400 uppercase tracking-wider">
-              Kuota Harian
-            </span>
-            <span
-              className={`text-sm font-mono font-bold ${
-                isOwnerOrAdmin
-                  ? "text-emerald-400"
-                  : quota.bypassUsed >= quota.bypassLimit
-                  ? "text-red-400"
-                  : "text-cyan-400"
-              }`}
-            >
-              {quotaRemaining}
-            </span>
-          </div>
-          <div className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse" />
-        </div>
-      </div>
+            {/* Ingest Tabs */}
+            <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-zinc-900 border border-white/5">
+              <button
+                type="button"
+                onClick={() => setInputMode("upload")}
+                className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                  inputMode === "upload"
+                    ? "bg-white/15 text-white border border-white/25 shadow-sm"
+                    : "text-zinc-400 hover:text-white"
+                }`}
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>Upload File Komputer</span>
+              </button>
 
-      {/* Quick Demo Audio Action Bar */}
-      <div className="p-4 rounded-xl bg-gradient-to-r from-purple-950/30 via-zinc-900 to-cyan-950/30 border border-purple-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5 text-xs text-zinc-300">
-          <Music className="w-4 h-4 text-purple-400 shrink-0" />
-          <div>
-            <span className="font-bold text-white">Audio Demo: </span>
-            <span className="text-purple-300">DJ NEGORO ANGIN</span>
-            <span className="ml-2 px-2 py-0.5 rounded text-[10px] font-mono bg-purple-500/20 text-purple-200 border border-purple-500/30">
-              Demo
-            </span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          <a
-            href={DEMO_YOUTUBE_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-[11px] font-semibold text-zinc-300 flex items-center gap-1.5 transition-colors"
-          >
-            <span>Buka di YouTube</span>
-            <ExternalLink className="w-3 h-3" />
-          </a>
-
-          <button
-            type="button"
-            onClick={handleLoadDemoAudio}
-            className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-[11px] flex items-center gap-1.5 shadow-md shadow-purple-600/30 active:scale-95 transition-all cursor-pointer"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Coba Audio Demo Ini</span>          </button>
-        </div>
-      </div>
-
-      {/* Main Grid: Control Station & Ingest Dock */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Ingest & DSP Parameters (7 Cols) */}
-        <div className="lg:col-span-7 space-y-5">
-          <div className="p-6 rounded-2xl bg-zinc-950/80 border border-white/10 space-y-6 shadow-2xl">
-            {/* Input Selection Tabs */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold text-zinc-300">
-                  Sumber Audio (Audio Ingest):
-                </span>
-                <span className="text-[10px] font-mono text-cyan-400">
-                  Dukungan format MP3 &middot; WAV &middot; OGG &middot; FLAC
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-zinc-900 border border-white/5">
-                <button
-                  type="button"
-                  onClick={() => setInputMode("upload")}
-                  className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                    inputMode === "upload"
-                      ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
-                      : "text-zinc-400 hover:text-white"
-                  }`}
-                >
-                  <UploadCloud className="w-4 h-4" />
-                  <span>Upload File Komputer</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setInputMode("url")}
-                  className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                    inputMode === "url"
-                      ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
-                      : "text-zinc-400 hover:text-white"
-                  }`}
-                >
-                  <Link className="w-4 h-4" />
-                  <span>URL Audio Direct</span>
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => setInputMode("url")}
+                className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                  inputMode === "url"
+                    ? "bg-white/15 text-white border border-white/25 shadow-sm"
+                    : "text-zinc-400 hover:text-white"
+                }`}
+              >
+                <Link className="w-3.5 h-3.5" />
+                <span>URL Audio Direct</span>
+              </button>
             </div>
 
             {/* Input Box */}
             {inputMode === "upload" ? (
-              <label className="flex flex-col items-center justify-center gap-3 p-8 rounded-xl border-2 border-dashed border-white/15 bg-zinc-900/40 hover:bg-zinc-900/70 hover:border-cyan-500/40 transition-all cursor-pointer text-center">
+              <label className="flex flex-col items-center justify-center gap-3 p-8 rounded-xl border-2 border-dashed border-white/15 bg-zinc-900/40 hover:bg-zinc-900/70 hover:border-white/30 transition-all cursor-pointer text-center">
                 <input
                   type="file"
                   accept="audio/*"
                   onChange={handleFileChange}
                   className="hidden"
                 />
-                <div className="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
-                  <UploadCloud className="w-6 h-6" />
+                <div className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-zinc-300">
+                  <Upload className="w-6 h-6" />
                 </div>
-                {hasLoadedAudio && audioFileName ? (
-                  <div className="space-y-1">
-                    <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                      <CheckCircle2 className="w-3 h-3" />
-                      File Audio Siap Diproses
-                    </div>
-                    <p className="text-xs font-bold text-white max-w-sm truncate">
-                      {audioFileName}
-                    </p>
-                    <p className="text-[10px] text-zinc-400">
-                      Klik di sini jika ingin mengganti dengan file lain
-                    </p>
-                  </div>
-                ) : (
-                  <div>
-                    <p className="text-xs font-bold text-white">
-                      Pilih atau Seret File Audio ke Sini
-                    </p>
-                    <p className="text-[10px] text-zinc-400 mt-1">
-                      Mendukung format MP3, WAV, OGG, FLAC &middot; Maksimal 100 MB &middot; Diproses 100% lokal di browser Anda
-                    </p>
-                    <div className="mt-2.5 inline-block text-[10px] text-cyan-300 bg-cyan-500/10 border border-cyan-500/20 px-2.5 py-1 rounded-full font-mono">
-                      Atau klik "Coba Audio Demo" di atas untuk uji coba langsung
-                    </div>
-                  </div>
-                )}
+                <div>
+                  <p className="text-sm font-bold text-white">
+                    {selectedFile ? selectedFile.name : "Pilih atau Seret File Audio ke Sini"}
+                  </p>
+                  <p className="text-xs text-zinc-500 mt-1">
+                    Mendukung MP3, WAV, OGG, FLAC &middot; Maksimal 100 MB &middot; Diproses 100% lokal di browser
+                  </p>
+                </div>
               </label>
             ) : (
-              <div className="space-y-4">
-                <div>
-                  <label className="text-xs font-semibold text-zinc-300 mb-1.5 block">
-                    URL Video YouTube / TikTok / Direct Audio (MP3/WAV/OGG):
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="url"
-                      value={audioUrlInput}
-                      onChange={(e) => setAudioUrlInput(e.target.value)}
-                      placeholder="Paste link YouTube, TikTok, atau link file audio (.mp3, .wav, .ogg)..."
-                      className="flex-1 px-3.5 py-2.5 rounded-xl bg-zinc-900 border border-white/10 text-xs text-white placeholder-zinc-500 focus:border-white/40 focus:outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const url = audioUrlInput.trim();
-                        if (!url) return;
-
-                        // Deteksi Direct Audio URL atau URL eksternal
-                        const isDirectAudio = /\.(mp3|wav|ogg|flac|m4a|aac)(\?.*)?$/i.test(url) || url.includes("cdn") || url.includes("audio");
-                        const playableUrl = url.startsWith("http") && !url.includes(window.location.hostname)
-                          ? `/api/audio-proxy?url=${encodeURIComponent(url)}`
-                          : url;
-
-                        setSourceAudioUrl(playableUrl);
-                        const fileNameGuess = url.split("/").pop()?.split("?")[0] || "Stream_Audio_Source.mp3";
-                        setAudioFileName(fileNameGuess);
-                        setSelectedFile(null);
-                        setHasLoadedAudio(true);
-
-                        if (audioRef.current) {
-                          audioRef.current.src = playableUrl;
-                          audioRef.current.load();
-                        }
-                        setIsPlaying(false);
-                        setCurrentTime(0);
-
-                        if (isDirectAudio) {
-                          onNotify("Audio URL berhasil diekstrak dan dimuat ke Bypass Engine!", "success");
-                        } else {
-                          onNotify("URL media terdeteksi! Stream audio dihubungkan ke player di bawah.", "info");
-                        }
-                      }}
-                      className="px-4 py-2 bg-white text-zinc-950 font-bold text-xs rounded-xl cursor-pointer hover:bg-zinc-200 transition-all shadow-md active:scale-95 shrink-0"
-                    >
-                      Muat Audio
-                    </button>
-                  </div>
+              <div className="space-y-3">
+                <label className="text-xs font-semibold text-zinc-300 block">
+                  URL Video YouTube / TikTok / Direct Audio (MP3/WAV/OGG):
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={audioUrlInput}
+                    onChange={(e) => setAudioUrlInput(e.target.value)}
+                    placeholder="Paste link YouTube, TikTok, atau link file audio (.mp3, .wav)..."
+                    className="relative z-20 pointer-events-auto select-text flex-1 px-3.5 py-2.5 rounded-xl bg-zinc-900 border border-white/10 text-xs text-white placeholder-zinc-500 focus:border-white/40 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleLoadFromUrl()}
+                    disabled={isLoadingUrl}
+                    className="px-4 py-2 bg-white text-zinc-950 font-bold text-xs rounded-xl cursor-pointer hover:bg-zinc-200 transition-all shadow-md active:scale-95 shrink-0 disabled:opacity-50"
+                  >
+                    {isLoadingUrl ? "Memuat..." : "Muat Audio"}
+                  </button>
                 </div>
 
-                {/* Preview Video Otomatis YouTube & TikTok Langsung di Browser */}
                 {audioUrlInput && (
-                  <div className="space-y-2">
+                  <div className="space-y-2 pt-2">
                     <VideoUrlPreview
                       url={audioUrlInput}
                       onClear={() => setAudioUrlInput("")}
@@ -619,26 +611,11 @@ sound:Play()`;
                     />
                     <div className="flex items-center justify-between p-3 rounded-xl bg-white/[0.04] border border-white/10 text-xs">
                       <span className="text-zinc-300">
-                        Ingin memproses audio dari link di atas dengan Speed Scaling &amp; Gain?
+                        Ekstrak stream audio dari link ini untuk di-bypass?
                       </span>
                       <button
                         type="button"
-                        onClick={() => {
-                          const url = audioUrlInput.trim();
-                          if (!url) return;
-                          const streamUrl = `/api/audio-proxy?url=${encodeURIComponent(url)}`;
-                          setSourceAudioUrl(streamUrl);
-                          setAudioFileName("Stream_Media_Audio.mp3");
-                          setSelectedFile(null);
-                          setHasLoadedAudio(true);
-                          if (audioRef.current) {
-                            audioRef.current.src = streamUrl;
-                            audioRef.current.load();
-                          }
-                          setIsPlaying(false);
-                          setCurrentTime(0);
-                          onNotify("Stream audio terhubung! Silakan preview atau klik 'Proses Audio Bypass' di bawah.", "success");
-                        }}
+                        onClick={() => handleLoadFromUrl(audioUrlInput)}
                         className="px-3 py-1.5 rounded-lg bg-white text-zinc-950 font-bold text-[11px] hover:bg-zinc-200 transition-all cursor-pointer shadow"
                       >
                         Gunakan Audio Ini
@@ -649,488 +626,478 @@ sound:Play()`;
               </div>
             )}
 
-            {/* Source Audio Real Preview Player (HANYA MUNCUL JIKA SUDAH ADA FILE) */}
-            {hasLoadedAudio ? (
-              <div className="p-4 rounded-xl bg-zinc-900/90 border border-cyan-500/20 space-y-3">
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="w-2 h-2 rounded-full bg-cyan-400 shrink-0" />
-                    <span className="font-bold text-white truncate max-w-[220px]">
-                      Preview Audio Sumber: {audioFileName}
-                    </span>
-                  </div>
-                  <div className="text-[11px] font-mono text-cyan-400 font-bold shrink-0">
-                    {formatDuration(currentTime)} / {formatDuration(duration)}
-                  </div>
+            {/* Quick Demo Trigger */}
+            <div className="pt-2 flex items-center justify-between text-xs text-zinc-400">
+              <span>Ingin mencoba audio sampel DJ NEGORO ANGIN?</span>
+              <button
+                type="button"
+                onClick={handleLoadDemo}
+                className="text-white font-bold hover:underline cursor-pointer flex items-center gap-1 font-mono"
+              >
+                <span>Coba Audio Demo</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* STEP 2: PREVIEW AUDIO & A/B TESTING CONSOLE */}
+          {hasLoadedAudio && (
+            <div className="p-6 rounded-2xl bg-zinc-950/80 border border-white/10 space-y-4 shadow-xl">
+              <div className="flex items-center justify-between pb-3 border-b border-white/5">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="text-xs font-bold text-white font-mono truncate max-w-xs">
+                    {audioFileName || "Preview Audio Sumber"}
+                  </span>
+                </div>
+                <div className="text-xs font-mono text-zinc-400">
+                  {formatDuration(currentTime)} / {formatDuration(duration)}
+                </div>
+              </div>
+
+              {/* Scrubber Range */}
+              <input
+                type="range"
+                min="0"
+                max={duration || 10}
+                step="0.05"
+                value={currentTime}
+                onChange={handleSeek}
+                className="w-full h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-white"
+              />
+
+              {/* Transport & A/B Test Switcher */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={togglePlaySource}
+                    className="w-10 h-10 rounded-xl bg-white hover:bg-zinc-200 text-zinc-950 flex items-center justify-center font-bold shadow-md active:scale-95 transition-all cursor-pointer"
+                  >
+                    {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (audioRef.current) {
+                        audioRef.current.currentTime = 0;
+                      }
+                      setCurrentTime(0);
+                    }}
+                    className="w-10 h-10 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 flex items-center justify-center transition-colors cursor-pointer"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                  </button>
                 </div>
 
-                {/* Progress Slider */}
+                {/* A/B Testing Toggle */}
+                <div className="flex items-center gap-1.5 p-1 rounded-xl bg-zinc-900 border border-white/10 text-xs font-mono">
+                  <span className="text-[10px] text-zinc-500 uppercase px-2 font-bold">A/B Test:</span>
+                  <button
+                    type="button"
+                    onClick={() => setAbTestMode("bypassed")}
+                    className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+                      abTestMode === "bypassed"
+                        ? "bg-white text-zinc-950 shadow"
+                        : "text-zinc-400 hover:text-white"
+                    }`}
+                  >
+                    Bypassed ({speedMultiplier}x)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAbTestMode("original")}
+                    className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+                      abTestMode === "original"
+                        ? "bg-white text-zinc-950 shadow"
+                        : "text-zinc-400 hover:text-white"
+                    }`}
+                  >
+                    Original (1.0x)
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 3: 1-KLIK PRESET BYPASS */}
+          <div className="p-6 rounded-2xl bg-zinc-950/80 border border-white/10 space-y-4 shadow-xl">
+            <div className="flex items-center justify-between pb-2 border-b border-white/5">
+              <h2 className="text-xs font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-zinc-300" />
+                <span>Preset 1-Klik Moderasi Roblox</span>
+              </h2>
+              <span className="text-[10px] font-mono text-zinc-500">Tingkat Proteksi</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <button
+                type="button"
+                onClick={() => applyPreset("light")}
+                className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                  activePreset === "light"
+                    ? "bg-white/15 border-white text-white shadow-lg"
+                    : "bg-zinc-900/60 border-white/5 text-zinc-400 hover:border-white/20"
+                }`}
+              >
+                <div className="font-bold text-xs text-white">Light Bypass</div>
+                <div className="text-[11px] text-zinc-400 mt-1">Aman &amp; Jernih (1.04x, +15c)</div>
+                <div className="text-[10px] text-zinc-500 mt-0.5">Untuk vokal &amp; lagu santai</div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => applyPreset("medium")}
+                className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                  activePreset === "medium"
+                    ? "bg-white/15 border-white text-white shadow-lg"
+                    : "bg-zinc-900/60 border-white/5 text-zinc-400 hover:border-white/20"
+                }`}
+              >
+                <div className="font-bold text-xs text-white">Medium Bypass</div>
+                <div className="text-[11px] text-zinc-400 mt-1">Balanced Mod (1.12x, Phase Inv)</div>
+                <div className="text-[10px] text-zinc-500 mt-0.5">BGM map umum &amp; SFX</div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => applyPreset("aggressive")}
+                className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                  activePreset === "aggressive"
+                    ? "bg-white/15 border-white text-white shadow-lg"
+                    : "bg-zinc-900/60 border-white/5 text-zinc-400 hover:border-white/20"
+                }`}
+              >
+                <div className="font-bold text-xs text-white">Aggressive Bypass</div>
+                <div className="text-[11px] text-zinc-400 mt-1">2.3x Speed Scaling &amp; Noise</div>
+                <div className="text-[10px] text-zinc-500 mt-0.5">Maksimum lolos copyright</div>
+              </button>
+            </div>
+          </div>
+
+          {/* STEP 4: BYPASS DSP CONTROLS (DETAILED SLIDERS) */}
+          <div className="p-6 rounded-2xl bg-zinc-950/80 border border-white/10 space-y-5 shadow-xl">
+            <div className="flex items-center justify-between pb-3 border-b border-white/5">
+              <h2 className="text-xs font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
+                <Sliders className="w-4 h-4 text-zinc-300" />
+                <span>Parameter Mesin Bypass (Micro-Tuning DSP)</span>
+              </h2>
+              <span className="text-[10px] font-mono text-zinc-400">
+                Roblox PlaybackSpeed: <strong className="text-white">{robloxSpeed}</strong>
+              </span>
+            </div>
+
+            {/* Slider 1: Speed Scaling */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-xs font-mono">
+                <span className="text-zinc-300">Kecepatan Bypass (Speed Scaling):</span>
+                <span className="text-white font-bold">{speedMultiplier.toFixed(2)}x</span>
+              </div>
+              <input
+                type="range"
+                min="0.90"
+                max="2.50"
+                step="0.01"
+                value={speedMultiplier}
+                onChange={(e) => {
+                  setSpeedMultiplier(parseFloat(e.target.value));
+                  setActivePreset("custom");
+                }}
+                className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-white"
+              />
+              <div className="flex justify-between text-[10px] font-mono text-zinc-500">
+                <span>0.90x (Subtle)</span>
+                <span>1.04x</span>
+                <span>1.80x</span>
+                <span>2.30x (Standar Roblox)</span>
+                <span>2.50x</span>
+              </div>
+            </div>
+
+            {/* Slider 2: Micro-tuning Pitch Shifter (-50 to +50 cents) */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-xs font-mono">
+                <span className="text-zinc-300">Pitch Shifter (Micro-Tuning):</span>
+                <span className="text-white font-bold">
+                  {pitchCents > 0 ? `+${pitchCents}` : pitchCents} cents ({(pitchCents / 100).toFixed(2)} semitone)
+                </span>
+              </div>
+              <input
+                type="range"
+                min="-50"
+                max="50"
+                step="1"
+                value={pitchCents}
+                onChange={(e) => {
+                  setPitchCents(parseInt(e.target.value));
+                  setActivePreset("custom");
+                }}
+                className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-white"
+              />
+              <div className="flex justify-between text-[10px] font-mono text-zinc-500">
+                <span>-50 cents</span>
+                <span>0 cents (Netral)</span>
+                <span>+50 cents</span>
+              </div>
+            </div>
+
+            {/* Slider 3: Amplifikasi Gain */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-xs font-mono">
+                <span className="text-zinc-300">Amplifikasi Gain (Volume):</span>
+                <span className="text-white font-bold">{amplifyGain} dB</span>
+              </div>
+              <input
+                type="range"
+                min="-24"
+                max="6"
+                step="1"
+                value={amplifyGain}
+                onChange={(e) => {
+                  setAmplifyGain(parseInt(e.target.value));
+                  setActivePreset("custom");
+                }}
+                className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-white"
+              />
+              <div className="flex justify-between text-[10px] font-mono text-zinc-500">
+                <span>-24 dB</span>
+                <span>-10 dB (Standar Roblox)</span>
+                <span>0 dB</span>
+                <span>+6 dB</span>
+              </div>
+            </div>
+
+            {/* Advanced Grid: Phase Invert, Noise, Sub-Bass, Reverb */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-white/5">
+              {/* Phase Invert Toggle */}
+              <div className="p-3.5 rounded-xl bg-zinc-900 border border-white/5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-white">Phase Inversion (L/R)</span>
+                  <input
+                    type="checkbox"
+                    checked={phaseInvert}
+                    onChange={(e) => setPhaseInvert(e.target.checked)}
+                    className="w-4 h-4 accent-white cursor-pointer"
+                  />
+                </div>
+                <p className="text-[10px] text-zinc-400 leading-tight">
+                  Membalik fase kanal stereo 180&deg; untuk menghancurkan korelasi akustik bot moderasi.
+                </p>
+              </div>
+
+              {/* Stereo Width */}
+              <div className="p-3.5 rounded-xl bg-zinc-900 border border-white/5 space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold text-white">
+                  <span>Stereo Widener</span>
+                  <span className="text-zinc-400 font-mono">{(stereoWidth * 100).toFixed(0)}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="1.8"
+                  step="0.05"
+                  value={stereoWidth}
+                  onChange={(e) => setStereoWidth(parseFloat(e.target.value))}
+                  className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-white"
+                />
+              </div>
+
+              {/* Micro-Noise Layering */}
+              <div className="p-3.5 rounded-xl bg-zinc-900 border border-white/5 space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold text-white">
+                  <span>Micro-Noise Injection</span>
+                  <span className="text-zinc-400 font-mono">{microNoise}%</span>
+                </div>
                 <input
                   type="range"
                   min="0"
-                  max={duration || 10}
-                  step="0.05"
-                  value={currentTime}
-                  onChange={handleSeek}
-                  className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
-                />
-
-                {/* Controls */}
-                <div className="flex items-center justify-between pt-1">
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={togglePlaySource}
-                      className="w-8 h-8 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-zinc-950 flex items-center justify-center font-bold shadow-md shadow-cyan-500/30 active:scale-95 transition-all cursor-pointer"
-                    >
-                      {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (audioRef.current) {
-                          audioRef.current.currentTime = 0;
-                          setCurrentTime(0);
-                        }
-                      }}
-                      className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white transition-colors cursor-pointer"
-                      title="Ulang dari awal"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-
-                  {/* Speed Preview Toggle */}
-                  <button
-                    type="button"
-                    onClick={() => setPreviewSpeedRate(!previewSpeedRate)}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer border ${
-                      previewSpeedRate
-                        ? "bg-cyan-500/20 border-cyan-400 text-cyan-300"
-                        : "bg-zinc-800 border-white/5 text-zinc-400 hover:text-white"
-                    }`}
-                    title="Dengarkan preview saat kecepatan bypass aktif"
-                  >
-                    <FastForward className="w-3 h-3" />
-                    <span>Preview Speed ({speedMultiplier}x): {previewSpeedRate ? "ON" : "OFF"}</span>
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="p-4 rounded-xl bg-zinc-900/40 border border-white/5 border-dashed flex items-center justify-center gap-2 text-xs text-zinc-500">
-                <FileAudio className="w-4 h-4 text-zinc-600" />
-                <span>Belum ada audio yang dimuat. Silakan unggah file Anda atau klik <strong>Coba Audio Demo</strong> di atas.</span>
-              </div>
-            )}
-
-            {/* Preset Selector */}
-            <div>
-              <span className="text-xs font-semibold text-zinc-300 block mb-2">
-                Preset Cepat Moderasi Roblox:
-              </span>
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { id: "standard", label: "Roblox Standard", desc: "2.3x / -10dB" },
-                  { id: "high", label: "Clarity Spasial", desc: "1.8x / -6dB" },
-                  { id: "heavy", label: "Heavy Bass", desc: "1.5x / -12dB" },
-                ].map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => applyPreset(p.id as any)}
-                    className={`p-2.5 rounded-xl text-center transition-all cursor-pointer border ${
-                      preset === p.id
-                        ? "bg-cyan-500/20 border-cyan-400 text-cyan-300"
-                        : "bg-zinc-900 border-white/5 text-zinc-400 hover:text-white"
-                    }`}
-                  >
-                    <div className="text-xs font-bold leading-tight">{p.label}</div>
-                    <div className="text-[10px] text-zinc-500 mt-0.5">{p.desc}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Precision Controls: Dual Matrix Sliders */}
-            <div className="p-4 rounded-xl bg-zinc-900/70 border border-white/5 space-y-5">
-              {/* Speed Multiplier */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-semibold text-zinc-300 flex items-center gap-1.5">
-                    <Sliders className="w-3.5 h-3.5 text-cyan-400" />
-                    Kecepatan Bypass (Speed Scaling):
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-mono font-bold text-cyan-300">
-                      {speedMultiplier.toFixed(1)}x
-                    </span>
-                    <span className="text-[10px] font-mono text-zinc-500">
-                      (Roblox Speed: {robloxSpeed})
-                    </span>
-                  </div>
-                </div>
-                <input
-                  type="range"
-                  min="1.2"
-                  max="4.0"
-                  step="0.1"
-                  value={speedMultiplier}
-                  onChange={(e) => {
-                    setSpeedMultiplier(parseFloat(e.target.value));
-                    setPreset("custom");
-                  }}
-                  className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
-                />
-                <div className="flex justify-between text-[9px] font-mono text-zinc-500 mt-1">
-                  <span>1.2x</span>
-                  <span className="text-cyan-400 font-bold">2.3x (Direkomendasikan)</span>
-                  <span>4.0x</span>
-                </div>
-              </div>
-
-              {/* Amplify Gain */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-semibold text-zinc-300 flex items-center gap-1.5">
-                    <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
-                    Amplifikasi Gain:
-                  </span>
-                  <span className="text-xs font-mono font-bold text-emerald-400">
-                    {amplifyGain} dB
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="-24"
-                  max="0"
+                  max="10"
                   step="1"
-                  value={amplifyGain}
-                  onChange={(e) => {
-                    setAmplifyGain(parseInt(e.target.value));
-                    setPreset("custom");
-                  }}
-                  className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-emerald-400"
+                  value={microNoise}
+                  onChange={(e) => setMicroNoise(parseInt(e.target.value))}
+                  className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-white"
                 />
-                <div className="flex justify-between text-[9px] font-mono text-zinc-500 mt-1">
-                  <span>-24 dB</span>
-                  <span className="text-emerald-400 font-bold">-10 dB (Standard)</span>
-                  <span>0 dB</span>
+                <p className="text-[9px] text-zinc-500">Injeksi desah halus untuk mengacak fingerprint MD5.</p>
+              </div>
+
+              {/* Sub-Bass Layering */}
+              <div className="p-3.5 rounded-xl bg-zinc-900 border border-white/5 space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold text-white">
+                  <span>50Hz Sub-Bass Layer</span>
+                  <span className="text-zinc-400 font-mono">{subBassLayer}%</span>
                 </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="10"
+                  step="1"
+                  value={subBassLayer}
+                  onChange={(e) => setSubBassLayer(parseInt(e.target.value))}
+                  className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-white"
+                />
+                <p className="text-[9px] text-zinc-500">Harmonik frekuensi rendah untuk mengubah spektrum FFT.</p>
               </div>
             </div>
-
-            {/* Execute Button */}
-            <button
-              type="button"
-              disabled={isProcessing}
-              onClick={handleExecuteBypass}
-              className="w-full py-3.5 rounded-xl bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/25 active:scale-98 transition-all cursor-pointer disabled:opacity-50"
-            >
-              {isProcessing ? (
-                <>
-                  <Activity className="w-4 h-4 animate-spin" />
-                  Mengodekan Audio OGG / Header Roblox...
-                </>
-              ) : (
-                <>
-                  <Zap className="w-4 h-4 fill-current" />
-                  Proses Audio Bypass Sekarang
-                </>
-              )}
-            </button>
           </div>
         </div>
 
-        {/* Right Output & Roblox Studio Script Engine (5 Cols) */}
-        <div className="lg:col-span-5 space-y-5">
-          {/* Hasil Export Preview Player Card */}
+        {/* RIGHT COLUMN: EXPORT CONSOLE & RESULTS (5 COLS) */}
+        <div className="lg:col-span-5 space-y-6">
+          {/* EXPORT CONFIGURATION & ACTION */}
+          <div className="p-6 rounded-2xl bg-zinc-950/80 border border-white/10 space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-white/5">
+              <h2 className="text-xs font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
+                <Download className="w-4 h-4 text-zinc-300" />
+                <span>Pengaturan Ekspor Roblox Studio</span>
+              </h2>
+            </div>
+
+            {/* Format Selection (OGG Vorbis, MP3, WAV) */}
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-zinc-300 block">
+                Format Kontainer Resmi Roblox:
+              </label>
+              <div className="grid grid-cols-3 gap-2 p-1 rounded-xl bg-zinc-900 border border-white/5">
+                {(["OGG", "MP3", "WAV"] as const).map((fmt) => (
+                  <button
+                    key={fmt}
+                    type="button"
+                    onClick={() => setTargetFormat(fmt)}
+                    className={`py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      targetFormat === fmt
+                        ? "bg-white text-zinc-950 shadow"
+                        : "text-zinc-400 hover:text-white"
+                    }`}
+                  >
+                    {fmt} {fmt === "OGG" ? "(Rekomendasi)" : ""}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-zinc-500 leading-tight">
+                Roblox Studio sangat merekomendasikan format <strong>OGG (Vorbis)</strong> untuk audio streaming mulus dan ukuran file hemat.
+              </p>
+            </div>
+
+            {/* MP3 Bitrate (jika format MP3) */}
+            {targetFormat === "MP3" && (
+              <div className="space-y-1.5 pt-1">
+                <label className="text-xs font-semibold text-zinc-300 block">Bitrate MP3:</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {([128, 192, 320] as const).map((br) => (
+                    <button
+                      key={br}
+                      type="button"
+                      onClick={() => setMp3Bitrate(br)}
+                      className={`py-1.5 rounded-lg text-xs font-mono font-bold border transition-all ${
+                        mp3Bitrate === br
+                          ? "bg-white/15 text-white border-white/30"
+                          : "bg-zinc-900 text-zinc-400 border-white/5 hover:text-white"
+                      }`}
+                    >
+                      {br} kbps
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Strip Metadata Checkbox */}
+            <div className="flex items-center gap-2 pt-1">
+              <input
+                type="checkbox"
+                id="stripMeta"
+                checked={stripMetadata}
+                onChange={(e) => setStripMetadata(e.target.checked)}
+                className="w-4 h-4 accent-white cursor-pointer"
+              />
+              <label htmlFor="stripMeta" className="text-xs text-zinc-300 cursor-pointer select-none">
+                Hapus seluruh tag ID3 &amp; Scramble Hash Metadata (Anti-Banned)
+              </label>
+            </div>
+
+            {/* Main Action Button */}
+            <button
+              type="button"
+              onClick={handleExecuteBypass}
+              disabled={isProcessing}
+              className="w-full py-4 rounded-xl bg-white text-zinc-950 font-bold text-sm hover:bg-zinc-200 transition-all shadow-xl active:scale-98 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2 font-['Manrope']"
+            >
+              <Zap className="w-4 h-4 fill-current" />
+              <span>
+                {isProcessing
+                  ? `Merender Audio Pipeline (${processProgress}%)...`
+                  : `Bypass & Unduh Format ${targetFormat}`}
+              </span>
+            </button>
+          </div>
+
+          {/* HASIL EKSPOR TERBARU (PLAYABLE PREVIEW) */}
           {lastExportedUrl && (
-            <div className="p-5 rounded-2xl bg-gradient-to-br from-emerald-950/40 via-zinc-900 to-zinc-950 border border-emerald-500/30 space-y-3.5 shadow-2xl animate-fadeIn">
-              <div className="flex items-center justify-between pb-2 border-b border-white/5">
-                <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
-                  <CheckCircle2 className="w-4 h-4" />
-                  Hasil Export Siap Dipreview:
-                </span>
+            <div className="p-6 rounded-2xl bg-zinc-900 border border-white/20 space-y-4 shadow-2xl animate-fadeIn">
+              <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <span className="text-xs font-bold text-white">Audio Hasil Bypass Siap!</span>
+                </div>
                 <span className="text-[10px] font-mono text-zinc-400">
                   {formatDuration(exportedCurrentTime)} / {formatDuration(exportedDuration)}
                 </span>
               </div>
 
-              {/* Progress Slider */}
+              {/* Scrubber Hasil Ekspor */}
               <input
                 type="range"
                 min="0"
-                max={exportedDuration || 1}
+                max={exportedDuration || 10}
                 step="0.05"
                 value={exportedCurrentTime}
                 onChange={handleExportedSeek}
-                className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-emerald-400"
+                className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-white"
               />
 
-              {/* Player Controls for Exported Audio */}
               <div className="flex items-center gap-3">
                 <button
                   type="button"
                   onClick={() => togglePlayExported()}
-                  className="w-10 h-10 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 flex items-center justify-center font-bold shadow-md shadow-emerald-500/30 active:scale-95 transition-all cursor-pointer shrink-0"
+                  className="px-4 py-2 rounded-xl bg-white text-zinc-950 font-bold text-xs flex items-center gap-2 shadow active:scale-95 transition-all cursor-pointer"
                 >
-                  {isExportedPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
+                  {isExportedPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                  <span>{isExportedPlaying ? "Pause Preview" : "Dengarkan Preview"}</span>
                 </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (exportedAudioRef.current) {
-                      exportedAudioRef.current.currentTime = 0;
-                      setExportedCurrentTime(0);
-                    }
-                  }}
-                  className="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors cursor-pointer shrink-0"
-                  title="Ulangi dari awal"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                </button>
-
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs font-bold text-white truncate">
-                    {audioFileName}
-                  </div>
-                  <div className="text-[10px] text-zinc-400 font-mono">
-                    Speed: {speedMultiplier}x &middot; Roblox: {robloxSpeed}
-                  </div>
-                </div>
 
                 <a
                   href={lastExportedUrl}
-                  download={`${audioFileName.replace(/\.[^/.]+$/, "")}_bypass.wav`}
-                  className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md transition-all cursor-pointer shrink-0"
+                  download={audioFileName ? `bypassed_${audioFileName}` : `joverse_bypass_${Date.now()}.${targetFormat.toLowerCase()}`}
+                  className="flex-1 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs text-center border border-white/15 transition-all flex items-center justify-center gap-1.5"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Unduh</span>
+                  <span>Download File</span>
                 </a>
-              </div>
-
-              {/* Native HTML5 Audio Element Fallback */}
-              <div className="pt-2 border-t border-white/5">
-                <span className="text-[10px] text-zinc-500 uppercase font-mono block mb-1">
-                  Player Native Browser:
-                </span>
-                <audio
-                  controls
-                  src={lastExportedUrl}
-                  className="w-full h-8 rounded-lg accent-emerald-400 bg-zinc-900"
-                  preload="auto"
-                />
               </div>
             </div>
           )}
 
-          <div className="p-6 rounded-2xl bg-zinc-950/80 border border-white/10 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between pb-3 border-b border-white/5">
-              <h2 className="text-xs font-bold text-white flex items-center gap-1.5 uppercase tracking-wider font-mono">
-                <Code2 className="w-4 h-4 text-cyan-400" />
-                Roblox Studio Script Snippet
-              </h2>
-              <span className="text-[10px] text-zinc-500 font-mono">Auto-Generated</span>
+          {/* LUAU SCRIPT GENERATOR FOR ROBLOX STUDIO */}
+          <div className="p-6 rounded-2xl bg-zinc-950/80 border border-white/10 space-y-4 shadow-xl">
+            <div className="flex items-center gap-2 pb-2 border-b border-white/5">
+              <Code2 className="w-4 h-4 text-zinc-300" />
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">
+                Script Luau Roblox Studio
+              </h3>
             </div>
-
-            <p className="text-[11px] text-zinc-400 leading-relaxed">
-              Pasang nilai properti ini pada objek <code className="text-cyan-300">Sound</code> di Roblox Studio Anda:
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Setelah mengunggah file hasil bypass ke Roblox Creator Dashboard, pasang script Luau berikut pada objek <strong>Sound</strong> di game Anda untuk mengembalikan tempo dan nada normal:
             </p>
-
-            {/* Live Script Box (Sesuai Permintaan: SoundId, PlaybackSpeed, Volume) */}
-            <div className="p-4 rounded-xl bg-zinc-900/90 border border-white/10 font-mono text-xs text-zinc-300 space-y-2 overflow-x-auto">
-              <div className="text-[11px] text-zinc-400 font-sans pb-1.5 border-b border-white/5">
-                Nilai Properti Objek Sound Roblox:
-              </div>
-
-              <div className="space-y-1.5">
-                <div className="text-zinc-300">
-                  Sound.SoundId = <span className="text-emerald-400">"rbxassetid://YOUR_ID"</span>
-                </div>
-                <div className="text-cyan-300 font-bold bg-cyan-950/50 px-2 py-1 rounded border border-cyan-500/30 flex items-center justify-between">
-                  <span>Sound.PlaybackSpeed = {robloxSpeed}</span>
-                  <span className="text-[10px] text-cyan-400 font-sans font-normal">(Tempo Normal)</span>
-                </div>
-                <div className="text-zinc-300">
-                  Sound.Volume = <span className="text-amber-400">1</span>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  const snippet = `Sound.SoundId = "rbxassetid://YOUR_ID"\nSound.PlaybackSpeed = ${robloxSpeed}\nSound.Volume = 1`;
-                  navigator.clipboard.writeText(snippet);
-                  onNotify("Snippet properti Roblox berhasil disalin!", "success");
-                }}
-                className="mt-2 w-full py-2 px-3 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <Copy className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Salin Nilai Properti Roblox</span>
-              </button>
+            <div className="p-3.5 rounded-xl bg-black border border-white/10 font-mono text-xs text-zinc-300 space-y-1 relative">
+              <div className="text-emerald-400">-- Pasang di ServerScriptService / Sound</div>
+              <div>local sound = Instance.new("Sound")</div>
+              <div>sound.SoundId = "rbxassetid://YOUR_AUDIO_ID"</div>
+              <div className="text-white font-bold">sound.PlaybackSpeed = {robloxSpeed}</div>
+              <div>sound.Volume = 1</div>
+              <div>sound.Parent = workspace</div>
+              <div>sound:Play()</div>
             </div>
-
-            {/* Disclaimer & Rekomendasi Moderasi (Estimasi Tingkat Keberhasilan Hingga 90%) */}
-            <div className="p-4 rounded-xl bg-zinc-900 border border-white/10 space-y-3">
-              <div className="flex items-center gap-2 pb-1.5 border-b border-white/5">
-                <ShieldCheck className="w-4 h-4 text-zinc-200 shrink-0" />
-                <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">
-                  Estimasi Tingkat Keberhasilan Hingga 90%
-                </h3>
-              </div>
-
-              <p className="text-xs text-zinc-300 leading-relaxed">
-                Algoritma pemrosesan pitch dan semitone serta validasi Luau AST telah diuji melalui pengujian internal di Roblox Studio. Namun, hasil akhir tetap bergantung pada sistem moderasi dan kebijakan Roblox yang dapat berubah sewaktu-waktu.
-              </p>
-
-              <div className="space-y-2 text-[11px] text-zinc-400 leading-relaxed border-t border-white/5 pt-2">
-                <div className="flex items-start gap-2">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-zinc-300 shrink-0 mt-0.5" />
-                  <span>
-                    <strong>Gunakan Kecepatan 2.3x:</strong> AI AcrCloud Roblox gagal mencocokkan sidik jari akustik (*fingerprint*) lagu asli jika di-stretch di atas 2.0x.
-                  </span>
-                </div>
-
-                <div className="flex items-start gap-2">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-zinc-300 shrink-0 mt-0.5" />
-                  <span>
-                    <strong>Gain Reduksi (-10 dB):</strong> Mencegah sistem deteksi Roblox mencocokkan gelombang audio melalui *Peak Normalization*.
-                  </span>
-                </div>
-
-                <div className="flex items-start gap-2">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-zinc-300 shrink-0 mt-0.5" />
-                  <span>
-                    <strong>Format OGG Vorbis:</strong> Format native Roblox dengan kompresi yang otomatis menghapus seluruh metadata ID3 (nama artis &amp; judul lagu).
-                  </span>
-                </div>
-              </div>
-
-              <div className="p-2.5 rounded-lg bg-black/40 border border-white/5 text-[10px] text-zinc-400 italic">
-                Tidak ada jaminan 100% bebas moderasi atau banned. Estimasi 90% bukan jaminan kelulusan moderasi Roblox. Pengguna tetap bertanggung jawab memastikan audio dan aset yang digunakan memiliki hak serta memenuhi ketentuan Roblox.
-              </div>
-            </div>
-
-            {/* Conversion Result List */}
-            <div className="pt-3 border-t border-white/5 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-white">Hasil Konversi Siap Pakai</span>
-                <span className="text-[10px] font-mono text-zinc-500">{records.length} item</span>
-              </div>
-
-              <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1 scrollbar-none">
-                {records.map((rec) => (
-                  <div
-                    key={rec.id}
-                    className="p-3.5 rounded-xl bg-zinc-900/80 border border-white/5 space-y-2.5 text-xs"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="font-bold text-white truncate max-w-[180px]">
-                          {rec.name}
-                        </div>
-                        <div className="text-[10px] text-zinc-500 font-mono">
-                          Speed: {rec.speed}x &middot; Roblox Speed:{" "}
-                          <span className="text-cyan-400 font-bold">{rec.robloxPlaybackSpeed}</span>
-                        </div>
-                      </div>
-                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
-                        READY
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2 pt-1 border-t border-white/5">
-                      {/* Play Preview Button */}
-                      <button
-                        type="button"
-                        onClick={() => togglePlayExported(rec.blobUrl || sourceAudioUrl)}
-                        className="py-1.5 px-2.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[11px] font-semibold flex items-center gap-1 transition-colors cursor-pointer"
-                        title="Dengarkan preview audio"
-                      >
-                        <Play className="w-3 h-3 text-cyan-400" />
-                        <span>Preview</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => copyLuaSnippet(rec)}
-                        className="flex-1 py-1.5 px-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                      >
-                        {copiedSnippetId === rec.id ? (
-                          <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                        ) : (
-                          <Copy className="w-3 h-3" />
-                        )}
-                        <span>{copiedSnippetId === rec.id ? "Tersalin!" : "Salin Lua"}</span>
-                      </button>
-
-                      <a
-                        href={rec.blobUrl || sourceAudioUrl}
-                        download={`${rec.name}_bypass.wav`}
-                        className="py-1.5 px-3 rounded-lg bg-cyan-600/20 border border-cyan-500/30 hover:bg-cyan-600/30 text-cyan-300 text-[11px] font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer"
-                      >
-                        <Download className="w-3 h-3" />
-                        <span>Unduh</span>
-                      </a>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Tata Cara & Panduan Penggunaan Bypass Audio */}
-      <div className="p-6 rounded-2xl bg-zinc-950/80 border border-white/10 space-y-4 shadow-xl">
-        <div className="flex items-center gap-2 pb-3 border-b border-white/5">
-          <BookOpen className="w-4 h-4 text-cyan-400" />
-          <h2 className="text-xs font-bold text-white uppercase tracking-wider font-mono">
-            Tata Cara &amp; Panduan Penggunaan Roblox Audio Bypass
-          </h2>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs text-zinc-300">
-          <div className="p-3.5 rounded-xl bg-zinc-900/70 border border-white/5 space-y-1.5">
-            <div className="font-bold text-cyan-300 flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center font-mono text-[11px]">1</span>
-              Pilih / Upload Audio
-            </div>
-            <p className="text-zinc-400 text-[11px] leading-relaxed">
-              Upload file audio atau klik tombol <strong>Coba Audio Demo</strong> di atas untuk memuat lagu contoh DJ Jedag-Jedug langsung.
-            </p>
-          </div>
-
-          <div className="p-3.5 rounded-xl bg-zinc-900/70 border border-white/5 space-y-1.5">
-            <div className="font-bold text-cyan-300 flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center font-mono text-[11px]">2</span>
-              Atur Preset &amp; Dengarkan
-            </div>
-            <p className="text-zinc-400 text-[11px] leading-relaxed">
-              Pilih preset Roblox Standard (2.3x) dan aktifkan <strong>Preview Speed</strong> untuk mendengarkan perubahan tempo secara langsung.
-            </p>
-          </div>
-
-          <div className="p-3.5 rounded-xl bg-zinc-900/70 border border-white/5 space-y-1.5">
-            <div className="font-bold text-cyan-300 flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center font-mono text-[11px]">3</span>
-              Proses &amp; Preview Hasil
-            </div>
-            <p className="text-zinc-400 text-[11px] leading-relaxed">
-              Klik <strong>Proses Audio Bypass</strong>. Setelah selesai, putar audio hasil transcode melalui box preview di kanan atas dan unduh filenya.
-            </p>
-          </div>
-
-          <div className="p-3.5 rounded-xl bg-zinc-900/70 border border-white/5 space-y-1.5">
-            <div className="font-bold text-cyan-300 flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center font-mono text-[11px]">4</span>
-              Pasang di Roblox Studio
-            </div>
-            <p className="text-zinc-400 text-[11px] leading-relaxed">
-              Salin script Lua yang disediakan, lalu atur <code>Sound.PlaybackSpeed</code> ke nilai hasil kalkulasi agar lagu terputar normal di game.
-            </p>
           </div>
         </div>
       </div>

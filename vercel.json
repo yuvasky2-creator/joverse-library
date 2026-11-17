@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/api/roblox/game-info",
+      "destination": "/api/roblox"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/$1"
     },

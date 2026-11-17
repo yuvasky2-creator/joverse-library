@@ -156,12 +156,12 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNotify }) => {
         </div>
 
         <div className="p-4 rounded-2xl bg-zinc-900/80 border border-white/10">
-          <div className="text-[11px] font-mono text-zinc-400 uppercase tracking-wider">Published</div>
+          <div className="text-[11px] font-mono text-zinc-400 uppercase tracking-wider">Status Public</div>
           <div className="text-2xl font-black text-white mt-1 font-['Sora'] flex items-center gap-1.5">
-            <CheckCircle2 className="w-5 h-5 text-zinc-200" />
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
             <span>{totalPublished}</span>
           </div>
-          <div className="text-[10px] text-zinc-500 mt-0.5">Status Aktif</div>
+          <div className="text-[10px] text-zinc-500 mt-0.5">Live di Roblox</div>
         </div>
 
         <div className="p-4 rounded-2xl bg-zinc-900/80 border border-white/10">
@@ -254,12 +254,12 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNotify }) => {
                       </span>
                     </div>
 
-                    {/* Status Badge Real-Time (Published / Private) */}
+                    {/* Status Badge Real-Time (Public / Private) */}
                     <div className="absolute top-3 right-3">
                       <span
-                        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold ${
                           isPublished
-                            ? "bg-white/15 text-white border border-white/25 backdrop-blur-md"
+                            ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 backdrop-blur-md shadow-[0_0_12px_rgba(16,185,129,0.2)]"
                             : "bg-zinc-800/80 text-zinc-400 border border-white/10 backdrop-blur-md"
                         }`}
                       >
@@ -268,7 +268,7 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNotify }) => {
                             isPublished ? "bg-emerald-400 animate-pulse" : "bg-zinc-500"
                           }`}
                         />
-                        {isPublished ? "Published" : "Private"}
+                        {isPublished ? "Public" : "Private"}
                       </span>
                     </div>
 
@@ -379,7 +379,7 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNotify }) => {
                     ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
                     : "bg-zinc-800 text-zinc-400 border border-white/10"
                 }`}>
-                  {selectedMap.status === "published" ? "Published (Bisa Dimainkan)" : "Private (Tahap Dev)"}
+                  {selectedMap.status === "published" ? "Public (Bisa Dimainkan Langsung)" : "Private (Tahap Development)"}
                 </span>
               </div>
               <h2 className="text-xl font-bold text-white mt-2 font-['Sora']">
