@@ -73,6 +73,17 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNotify }) => {
     return () => clearInterval(interval);
   }, [loadData]);
 
+  // Listener tombol ESC untuk menutup modal detail map
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setSelectedMap(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   // Filter map berdasarkan kategori terpilih
   const filteredMaps =
     selectedCategory === "Semua"
@@ -355,21 +366,17 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNotify }) => {
         </div>
       )}
 
-      {/* ── MODAL DETAIL PROJECT (Dengan CTA Resmi) ── */}
+      {/* ── MODAL DETAIL PROJECT (Scrollable & Easy Close) ── */}
       {selectedMap && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
-          <div className="w-full max-w-xl rounded-2xl bg-zinc-900 border border-white/15 p-6 space-y-5 shadow-2xl relative">
-            {/* Close button */}
-            <button
-              type="button"
-              onClick={() => setSelectedMap(null)}
-              className="absolute top-4 right-4 p-1.5 rounded-lg text-zinc-400 hover:text-white bg-white/5 border border-white/10 transition-colors cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-
-            {/* Modal Header */}
-            <div>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/85 backdrop-blur-md animate-fadeIn overflow-y-auto"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setSelectedMap(null);
+          }}
+        >
+          <div className="w-full max-w-lg max-h-[88vh] flex flex-col rounded-2xl bg-zinc-900 border border-white/15 shadow-2xl overflow-hidden my-auto relative animate-scaleUp">
+            {/* Sticky Header with Title & Close Button */}
+            <div className="flex items-center justify-between p-4 sm:p-5 border-b border-white/10 bg-zinc-900/90 backdrop-blur sticky top-0 z-20">
               <div className="flex items-center gap-2">
                 <span className="px-2.5 py-1 rounded-md text-[10px] font-mono font-bold bg-white/10 text-white border border-white/15">
                   {selectedMap.category}
@@ -377,85 +384,105 @@ export const Portfolio: React.FC<PortfolioProps> = ({ onNotify }) => {
                 <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold ${
                   selectedMap.status === "published"
                     ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
-                    : "bg-zinc-800 text-zinc-400 border border-white/10"
+                    : "bg-amber-500/15 text-amber-300 border border-amber-500/30"
                 }`}>
-                  {selectedMap.status === "published" ? "Public (Bisa Dimainkan Langsung)" : "Private (Tahap Development)"}
+                  {selectedMap.status === "published" ? "Public (Bisa Dimainkan)" : "Private (Tahap Dev)"}
                 </span>
               </div>
-              <h2 className="text-xl font-bold text-white mt-2 font-['Sora']">
-                {selectedMap.title}
-              </h2>
-            </div>
 
-            {/* Image Preview Real-Time */}
-            <div className="aspect-video w-full rounded-xl overflow-hidden bg-black border border-white/10 relative">
-              <img
-                src={selectedMap.thumbnailUrl}
-                alt={selectedMap.title}
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  const target = e.target as HTMLImageElement;
-                  if (!target.src.includes("hero-bg.jpg")) {
-                    target.src = "/hero-bg.jpg";
-                  }
-                }}
-              />
-            </div>
-
-            {/* Live Stats di Modal */}
-            <div className="grid grid-cols-3 gap-3">
-              <div className="p-2.5 rounded-xl bg-black/40 border border-white/5 text-center">
-                <div className="text-[10px] font-mono text-zinc-500 uppercase">Active Online</div>
-                <div className="text-sm font-bold text-white mt-0.5">{selectedMap.stats.online} Pemain</div>
-              </div>
-              <div className="p-2.5 rounded-xl bg-black/40 border border-white/5 text-center">
-                <div className="text-[10px] font-mono text-zinc-500 uppercase">Total Visits</div>
-                <div className="text-sm font-bold text-white mt-0.5">{selectedMap.stats.visits}</div>
-              </div>
-              <div className="p-2.5 rounded-xl bg-black/40 border border-white/5 text-center">
-                <div className="text-[10px] font-mono text-zinc-500 uppercase">Like Rating</div>
-                <div className="text-sm font-bold text-white mt-0.5">{selectedMap.stats.likePercent}%</div>
-              </div>
-            </div>
-
-            {/* Deskripsi */}
-            <div className="space-y-1.5">
-              <h4 className="text-xs font-mono uppercase tracking-wider text-zinc-400">Deskripsi Project:</h4>
-              <p className="text-xs text-zinc-300 leading-relaxed bg-black/30 p-3.5 rounded-xl border border-white/5">
-                {selectedMap.description}
-              </p>
-            </div>
-
-            {/* CALL TO ACTION RESMI */}
-            <div className="p-4 rounded-xl bg-gradient-to-b from-white/[0.08] to-white/[0.02] border border-white/15 space-y-2">
-              <div className="flex items-center gap-2 text-xs font-bold text-white">
-                <Sparkles className="w-4 h-4 text-white" />
-                <span>Eksplorasi Langsung di Roblox</span>
-              </div>
-              <p className="text-xs text-zinc-300 italic">
-                &ldquo;Coba langsung hasil karya saya di Roblox dan rasakan pengalaman map yang telah kami kembangkan.&rdquo;
-              </p>
-            </div>
-
-            {/* Modal Actions */}
-            <div className="flex items-center justify-end gap-3 pt-2">
               <button
                 type="button"
                 onClick={() => setSelectedMap(null)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white cursor-pointer"
+                aria-label="Tutup Detail"
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center border border-white/15 transition-all cursor-pointer shadow-md active:scale-95"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Scrollable Body */}
+            <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4 scrollbar-thin">
+              <h2 className="text-lg sm:text-xl font-bold text-white font-['Sora'] leading-tight">
+                {selectedMap.title}
+              </h2>
+
+              {/* Image Preview Real-Time */}
+              <div className="h-44 sm:h-52 w-full rounded-xl overflow-hidden bg-black border border-white/10 relative shrink-0">
+                <img
+                  src={selectedMap.thumbnailUrl}
+                  alt={selectedMap.title}
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    if (!target.src.includes("hero-bg.jpg")) {
+                      target.src = "/hero-bg.jpg";
+                    }
+                  }}
+                />
+              </div>
+
+              {/* Live Stats di Modal */}
+              <div className="grid grid-cols-3 gap-2.5">
+                <div className="p-2.5 rounded-xl bg-black/40 border border-white/5 text-center">
+                  <div className="text-[10px] font-mono text-zinc-500 uppercase">Active Online</div>
+                  <div className="text-xs sm:text-sm font-bold text-white mt-0.5">{selectedMap.stats.online} Pemain</div>
+                </div>
+                <div className="p-2.5 rounded-xl bg-black/40 border border-white/5 text-center">
+                  <div className="text-[10px] font-mono text-zinc-500 uppercase">Total Visits</div>
+                  <div className="text-xs sm:text-sm font-bold text-white mt-0.5">{selectedMap.stats.visits}</div>
+                </div>
+                <div className="p-2.5 rounded-xl bg-black/40 border border-white/5 text-center">
+                  <div className="text-[10px] font-mono text-zinc-500 uppercase">Like Rating</div>
+                  <div className="text-xs sm:text-sm font-bold text-white mt-0.5">{selectedMap.stats.likePercent}%</div>
+                </div>
+              </div>
+
+              {/* Deskripsi */}
+              <div className="space-y-1.5">
+                <h4 className="text-xs font-mono uppercase tracking-wider text-zinc-400">Deskripsi Project:</h4>
+                <p className="text-xs text-zinc-300 leading-relaxed bg-black/30 p-3.5 rounded-xl border border-white/5">
+                  {selectedMap.description}
+                </p>
+              </div>
+
+              {/* CALL TO ACTION RESMI */}
+              <div className="p-4 rounded-xl bg-gradient-to-b from-white/[0.08] to-white/[0.02] border border-white/15 space-y-2">
+                <div className="flex items-center gap-2 text-xs font-bold text-white">
+                  <Sparkles className="w-4 h-4 text-white" />
+                  <span>Eksplorasi Langsung di Roblox</span>
+                </div>
+                <p className="text-xs text-zinc-300 italic">
+                  &ldquo;Coba langsung hasil karya saya di Roblox dan rasakan pengalaman map yang telah kami kembangkan.&rdquo;
+                </p>
+              </div>
+            </div>
+
+            {/* Sticky Modal Actions Footer */}
+            <div className="p-4 sm:p-5 border-t border-white/10 bg-zinc-900/95 flex items-center justify-between gap-3 sticky bottom-0 z-20">
+              <button
+                type="button"
+                onClick={() => setSelectedMap(null)}
+                className="px-4 py-2.5 rounded-xl text-xs font-semibold text-zinc-300 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 transition-colors cursor-pointer"
               >
                 Tutup
               </button>
 
-              <a
-                href={selectedMap.robloxUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="px-5 py-2.5 rounded-xl text-xs font-bold text-zinc-950 bg-gradient-to-b from-white to-zinc-300 hover:to-zinc-200 transition-all flex items-center gap-2 shadow-lg cursor-pointer active:scale-95"
-              >
-                <span>Buka Map di Roblox</span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </a>
+              {selectedMap.status === "published" ? (
+                <a
+                  href={selectedMap.robloxUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold text-zinc-950 bg-gradient-to-b from-white to-zinc-300 hover:to-zinc-200 transition-all flex items-center gap-2 shadow-lg cursor-pointer active:scale-95"
+                >
+                  <span>Buka Map di Roblox</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              ) : (
+                <div className="flex items-center gap-2 text-xs font-mono text-zinc-400 bg-white/5 px-3 py-2 rounded-xl border border-white/5">
+                  <Lock className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Map Masih Private (Studio Only)</span>
+                </div>
+              )}
             </div>
           </div>
         </div>

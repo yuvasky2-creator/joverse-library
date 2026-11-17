@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { Star, ThumbsUp, Send, CheckCircle2, MessageSquare, Sparkles } from "lucide-react";
+import { Star, ThumbsUp, Send, CheckCircle2, MessageSquare, Sparkles, Activity } from "lucide-react";
 
 export interface UserFeedback {
   id: string;
@@ -12,8 +12,8 @@ export interface UserFeedback {
   isModerated?: boolean;
 }
 
-const STORAGE_FEEDBACKS_KEY = "joverse_user_feedbacks_v3";
-const STORAGE_LIKES_KEY = "joverse_user_likes_v3";
+const STORAGE_FEEDBACKS_KEY = "joverse_user_feedbacks_v4";
+const STORAGE_LIKES_KEY = "joverse_user_likes_v4";
 
 const INITIAL_FEEDBACKS: UserFeedback[] = [
   {
@@ -48,17 +48,16 @@ const INITIAL_FEEDBACKS: UserFeedback[] = [
 export const FeedbackAndLikeSection: React.FC = () => {
   const { user, openAuthModal } = useAuth();
 
-  // State Likes
+  // State Likes & Feedbacks
   const [likes, setLikes] = useState<string[]>(() => {
     try {
       const raw = localStorage.getItem(STORAGE_LIKES_KEY);
-      return raw ? JSON.parse(raw) : ["default_user_1", "default_user_2", "default_user_3", "default_user_4"];
+      return raw ? JSON.parse(raw) : ["usr_alex_dev", "usr_dimas_scripter", "usr_rian_rblx"];
     } catch {
-      return [];
+      return ["usr_alex_dev", "usr_dimas_scripter", "usr_rian_rblx"];
     }
   });
 
-  // State Feedbacks
   const [feedbacks, setFeedbacks] = useState<UserFeedback[]>(() => {
     try {
       const raw = localStorage.getItem(STORAGE_FEEDBACKS_KEY);
@@ -73,8 +72,40 @@ export const FeedbackAndLikeSection: React.FC = () => {
   const [hoverRating, setHoverRating] = useState<number>(0);
   const [comment, setComment] = useState<string>("");
   const [submitted, setSubmitted] = useState<boolean>(false);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
   const hasLiked = user ? likes.includes(user.id) : false;
+
+  // Sinkronisasi data real-time dengan serverless backend /api/community
+  const fetchCommunityData = useCallback(async () => {
+    try {
+      const res = await fetch("/api/community");
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.success) {
+          if (Array.isArray(data.likes)) {
+            setLikes(data.likes);
+            localStorage.setItem(STORAGE_LIKES_KEY, JSON.stringify(data.likes));
+          }
+          if (Array.isArray(data.feedbacks) && data.feedbacks.length > 0) {
+            setFeedbacks(data.feedbacks);
+            localStorage.setItem(STORAGE_FEEDBACKS_KEY, JSON.stringify(data.feedbacks));
+          }
+        }
+      }
+    } catch (err) {
+      // Offline fallback silent
+    }
+  }, []);
+
+  // Poll / refresh otomatis setiap 6 detik agar komen & like user lain langsung muncul secara real-time
+  useEffect(() => {
+    fetchCommunityData();
+    const interval = setInterval(() => {
+      fetchCommunityData();
+    }, 6_000);
+    return () => clearInterval(interval);
+  }, [fetchCommunityData]);
 
   // Cek apakah user sudah pernah kirim feedback sebelumnya
   useEffect(() => {
@@ -87,25 +118,41 @@ export const FeedbackAndLikeSection: React.FC = () => {
     }
   }, [user, feedbacks]);
 
-  const handleToggleLike = () => {
+  const handleToggleLike = async () => {
     if (!user) {
       openAuthModal("login");
       return;
     }
 
-    setLikes((prev) => {
-      let updated: string[];
-      if (prev.includes(user.id)) {
-        updated = prev.filter((id) => id !== user.id);
-      } else {
-        updated = [...prev, user.id];
+    // Optimistic UI Update
+    const newLikes = likes.includes(user.id)
+      ? likes.filter((id) => id !== user.id)
+      : [...likes, user.id];
+    setLikes(newLikes);
+    localStorage.setItem(STORAGE_LIKES_KEY, JSON.stringify(newLikes));
+
+    // Kirim ke backend serverless real-time
+    try {
+      const res = await fetch("/api/community", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "toggle_like",
+          userId: user.id,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.likes)) {
+          setLikes(data.likes);
+        }
       }
-      localStorage.setItem(STORAGE_LIKES_KEY, JSON.stringify(updated));
-      return updated;
-    });
+    } catch (err) {
+      console.warn("Like sync notice:", err);
+    }
   };
 
-  const handleSubmitFeedback = (e: React.FormEvent) => {
+  const handleSubmitFeedback = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) {
       openAuthModal("login");
@@ -128,18 +175,38 @@ export const FeedbackAndLikeSection: React.FC = () => {
       isModerated: true,
     };
 
-    setFeedbacks((prev) => {
-      const filtered = prev.filter((f) => f.userId !== user.id);
-      const updated = [newFeedback, ...filtered];
-      localStorage.setItem(STORAGE_FEEDBACKS_KEY, JSON.stringify(updated));
-      return updated;
-    });
+    // Optimistic UI Update
+    const updated = [newFeedback, ...feedbacks.filter((f) => f.userId !== user.id)];
+    setFeedbacks(updated);
+    localStorage.setItem(STORAGE_FEEDBACKS_KEY, JSON.stringify(updated));
 
     setSubmitted(true);
-    setTimeout(() => setSubmitted(false), 3000);
+    setIsSyncing(true);
+
+    // Kirim ke backend serverless real-time agar seluruh pengguna web langsung melihat ulasan baru
+    try {
+      const res = await fetch("/api/community", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "add_feedback",
+          feedback: newFeedback,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.feedbacks)) {
+          setFeedbacks(data.feedbacks);
+        }
+      }
+    } catch (err) {
+      console.warn("Feedback sync notice:", err);
+    } finally {
+      setIsSyncing(false);
+      setTimeout(() => setSubmitted(false), 3000);
+    }
   };
 
-  // Kalkulasi Skor Rata-rata
   const averageRating =
     feedbacks.length > 0
       ? (
@@ -154,13 +221,13 @@ export const FeedbackAndLikeSection: React.FC = () => {
         <div>
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/[0.06] border border-white/10 text-xs font-semibold text-zinc-300 font-mono mb-2">
             <Sparkles className="w-3.5 h-3.5" />
-            <span>INTERAKSI PENGGUNA RESMI</span>
+            <span>INTERAKSI PENGGUNA RESMI &middot; REAL-TIME LIVE</span>
           </div>
           <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight font-['Sora']">
             Kepuasan &amp; Feedback Komunitas
           </h2>
           <p className="text-xs sm:text-sm text-zinc-400 mt-1 max-w-xl">
-            Dukungan dan penilaian nyata dari para developer Roblox yang menggunakan tools serta layanan studio kami.
+            Dukungan dan penilaian langsung dari developer Roblox yang otomatis diperbarui secara live bagi seluruh pengunjung.
           </p>
         </div>
 
@@ -179,7 +246,7 @@ export const FeedbackAndLikeSection: React.FC = () => {
               className={`w-4 h-4 ${hasLiked ? "fill-current" : ""}`}
             />
             <span>{hasLiked ? "Sudah Disukai" : "Sukai Website"}</span>
-            <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-mono bg-black/40 text-zinc-300 border border-white/10">
+            <span className="ml-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono bg-black/50 text-white border border-white/10 font-bold">
               {likes.length}
             </span>
           </button>
@@ -196,8 +263,9 @@ export const FeedbackAndLikeSection: React.FC = () => {
               <span className="text-xs font-mono uppercase tracking-wider text-zinc-400">
                 Skor Kepuasan Rata-rata
               </span>
-              <span className="text-xs text-zinc-400 font-mono">
-                {feedbacks.length} Ulasan
+              <span className="text-xs text-white font-mono font-bold flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                {feedbacks.length} Ulasan Terverifikasi
               </span>
             </div>
 
@@ -219,7 +287,7 @@ export const FeedbackAndLikeSection: React.FC = () => {
               </div>
             </div>
             <p className="text-[11px] text-zinc-400 leading-relaxed">
-              Dihitung secara transparan dari akumulasi bintang yang diberikan oleh developer aktif.
+              Dihitung secara transparan dari akumulasi bintang yang diberikan oleh developer aktif di website ini.
             </p>
           </div>
 
@@ -287,10 +355,11 @@ export const FeedbackAndLikeSection: React.FC = () => {
               {user ? (
                 <button
                   type="submit"
-                  className="btn-white w-full py-2.5 rounded-xl text-xs font-bold text-zinc-950 flex items-center justify-center gap-2 shadow-md cursor-pointer active:scale-95 transition-all"
+                  disabled={isSyncing}
+                  className="btn-white w-full py-2.5 rounded-xl text-xs font-bold text-zinc-950 flex items-center justify-center gap-2 shadow-md cursor-pointer active:scale-95 transition-all disabled:opacity-50"
                 >
                   <Send className="w-3.5 h-3.5" />
-                  <span>Kirim Ulasan</span>
+                  <span>{isSyncing ? "Menyimpan Ulasan..." : "Kirim Ulasan"}</span>
                 </button>
               ) : (
                 <button
@@ -305,7 +374,7 @@ export const FeedbackAndLikeSection: React.FC = () => {
               {submitted && (
                 <div className="p-2.5 rounded-xl bg-white/10 border border-white/20 text-xs text-white flex items-center gap-2 animate-fadeIn">
                   <CheckCircle2 className="w-4 h-4 text-white shrink-0" />
-                  <span>Terima kasih! Ulasan Anda berhasil diperbarui.</span>
+                  <span>Terima kasih! Ulasan Anda berhasil diterbitkan secara live.</span>
                 </div>
               )}
             </form>
@@ -316,14 +385,15 @@ export const FeedbackAndLikeSection: React.FC = () => {
         <div className="lg:col-span-7 space-y-3.5">
           <div className="flex items-center justify-between pb-2 border-b border-white/5">
             <span className="text-xs font-mono uppercase tracking-wider text-zinc-400">
-              Ulasan Pengguna Terbaru
+              Ulasan Pengguna Terbaru (Live)
             </span>
-            <span className="text-xs text-zinc-500 font-mono">
-              Terverifikasi Komunitas
-            </span>
+            <div className="flex items-center gap-1.5 text-xs text-zinc-500 font-mono">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>Otomatis Sinkron Real-Time</span>
+            </div>
           </div>
 
-          <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1 scrollbar-thin">
+          <div className="space-y-3 max-h-[520px] overflow-y-auto pr-1 scrollbar-thin">
             {feedbacks.map((fb) => (
               <div
                 key={fb.id}

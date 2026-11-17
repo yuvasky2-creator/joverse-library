@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from "react";
-import { AlertCircle, Play, Video, ExternalLink, X } from "lucide-react";
+import { AlertCircle, Play, Video, ExternalLink, X, Music } from "lucide-react";
 
 interface VideoUrlPreviewProps {
   url: string;
   onClear?: () => void;
   onNotify?: (msg: string, type?: "success" | "error" | "info") => void;
+  onMetaLoaded?: (meta: { title: string; author?: string; thumbnail?: string }) => void;
 }
 
 export type PlatformType = "youtube" | "tiktok" | "direct" | "unknown";
@@ -35,7 +36,6 @@ export function detectPlatform(url: string): {
   }
 
   // 2. TikTok Detection
-  // e.g. https://www.tiktok.com/@username/video/1234567890123456789
   const ttMatch = cleanUrl.match(/tiktok\.com\/(?:@[\w.-]+\/video\/|v\/)(\d+)/i);
   if (ttMatch && ttMatch[1]) {
     const videoId = ttMatch[1];
@@ -47,7 +47,6 @@ export function detectPlatform(url: string): {
     };
   }
 
-  // Fallback TikTok short url e.g. vm.tiktok.com / vt.tiktok.com
   if (/tiktok\.com/i.test(cleanUrl)) {
     return {
       platform: "tiktok",
@@ -74,13 +73,92 @@ export function detectPlatform(url: string): {
 export const VideoUrlPreview: React.FC<VideoUrlPreviewProps> = ({
   url,
   onClear,
+  onMetaLoaded,
 }) => {
-  const [loadError, setLoadError] = useState(false);
+  const [videoTitle, setVideoTitle] = useState<string>("");
+  const [authorName, setAuthorName] = useState<string>("");
   const detected = detectPlatform(url);
 
+  // Ambil metadata judul asli via noembed / youtube oEmbed JSON
   useEffect(() => {
-    setLoadError(false);
-  }, [url]);
+    let isCancelled = false;
+
+    async function fetchMetadata() {
+      if (detected.platform === "youtube" && detected.videoId) {
+        // Coba YouTube oEmbed resmi terlebih dahulu
+        try {
+          const ytRes = await fetch(
+            `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${detected.videoId}&format=json`
+          );
+          if (ytRes.ok) {
+            const data = await ytRes.json();
+            if (!isCancelled && data.title) {
+              setVideoTitle(data.title);
+              setAuthorName(data.author_name || "");
+              onMetaLoaded?.({
+                title: data.title,
+                author: data.author_name,
+                thumbnail: data.thumbnail_url,
+              });
+              return;
+            }
+          }
+        } catch {
+          // lanjut ke noembed
+        }
+
+        // Fallback ke noembed
+        try {
+          const res = await fetch(
+            `https://noembed.com/embed?url=https://www.youtube.com/watch?v=${detected.videoId}`
+          );
+          if (res.ok) {
+            const data = await res.json();
+            if (!isCancelled && data.title) {
+              setVideoTitle(data.title);
+              setAuthorName(data.author_name || "");
+              onMetaLoaded?.({
+                title: data.title,
+                author: data.author_name,
+                thumbnail: data.thumbnail_url,
+              });
+              return;
+            }
+          }
+        } catch {
+          // fallback
+        }
+      } else if (detected.platform === "tiktok") {
+        try {
+          const res = await fetch(`https://www.tiktok.com/oembed?url=${encodeURIComponent(url)}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (!isCancelled && data.title) {
+              setVideoTitle(data.title);
+              setAuthorName(data.author_name || "");
+              onMetaLoaded?.({
+                title: data.title,
+                author: data.author_name,
+                thumbnail: data.thumbnail_url,
+              });
+              return;
+            }
+          }
+        } catch {
+          // fallback
+        }
+      } else if (detected.platform === "direct") {
+        const guess = url.split("/").pop()?.split("?")[0] || "Audio_Direct_Source.mp3";
+        setVideoTitle(guess);
+        onMetaLoaded?.({ title: guess });
+      }
+    }
+
+    fetchMetadata();
+    return () => {
+      isCancelled = true;
+    };
+  }, [url, detected.platform, detected.videoId, onMetaLoaded]);
 
   if (!url) return null;
 
@@ -111,15 +189,17 @@ export const VideoUrlPreview: React.FC<VideoUrlPreviewProps> = ({
     <div className="rounded-2xl bg-zinc-900/90 border border-white/10 overflow-hidden shadow-2xl transition-all">
       {/* Header bar */}
       <div className="px-4 py-2.5 bg-black/40 border-b border-white/5 flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 truncate">
           <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
-          <span className="text-xs font-bold text-white flex items-center gap-1.5 uppercase font-mono">
-            <Video className="w-3.5 h-3.5 text-zinc-400" />
-            Preview Video: {detected.platform === "youtube" ? "YouTube" : "TikTok"}
+          <span className="text-xs font-bold text-white flex items-center gap-1.5 uppercase font-mono truncate">
+            <Video className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+            <span className="truncate">
+              {videoTitle ? `${videoTitle}` : `Preview Video: ${detected.platform === "youtube" ? "YouTube" : "TikTok"}`}
+            </span>
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <a
             href={url}
             target="_blank"
@@ -147,7 +227,7 @@ export const VideoUrlPreview: React.FC<VideoUrlPreviewProps> = ({
           <div className="relative aspect-video w-full rounded-xl overflow-hidden bg-black border border-white/5">
             <iframe
               src={detected.embedUrl}
-              title="YouTube video player"
+              title={videoTitle || "YouTube video player"}
               className="w-full h-full border-0"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
               allowFullScreen
@@ -182,8 +262,10 @@ export const VideoUrlPreview: React.FC<VideoUrlPreviewProps> = ({
         )}
 
         <div className="mt-3 px-1 py-1.5 flex items-center justify-between text-[11px] text-zinc-400 border-t border-white/5">
-          <span>Video dapat diputar langsung di atas.</span>
-          <span className="font-mono text-zinc-300">Resmi & Terverifikasi</span>
+          <span className="truncate">
+            {authorName ? `Kreator: ${authorName}` : "Video dapat diputar langsung di atas."}
+          </span>
+          <span className="font-mono text-zinc-300 shrink-0">Resmi &amp; Terverifikasi</span>
         </div>
       </div>
     </div>

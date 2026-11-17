@@ -6,6 +6,7 @@ import { Footer } from "@/components/layout/Footer";
 import { Home } from "@/pages/Home";
 import { Bypass } from "@/pages/Bypass";
 import { ManualEditor } from "@/pages/ManualEditor";
+import { SkyboxConverter } from "@/pages/SkyboxConverter";
 import { Pricing } from "@/pages/Pricing";
 import { Portfolio } from "@/pages/Portfolio";
 import { OwnerPortal } from "@/pages/OwnerPortal";
@@ -114,7 +115,12 @@ export const AppContent: React.FC = () => {
           <ManualEditor onNotify={(msg, type) => addToast(type || "info", msg)} />
         )}
 
-        {/* 3. Stats & Grafik Penggunaan Global */}
+        {/* 3. Skybox Converter (Roblox 6-Side Cubemap) */}
+        {currentRoute === "skybox" && (
+          <SkyboxConverter onNotify={(msg, type) => addToast(type || "info", msg)} />
+        )}
+
+        {/* 4. Stats & Grafik Penggunaan Global */}
         {currentRoute === "analytics" && (
           <div className="wrap py-10 max-w-6xl animate-fadeIn">
             <UsageStatsSection />

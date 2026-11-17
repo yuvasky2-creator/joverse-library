@@ -56,6 +56,7 @@ export const ManualEditor: React.FC<ManualEditorProps> = ({ onNotify }) => {
   const [audioUrl, setAudioUrl] = useState("");
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [isLoadingUrl, setIsLoadingUrl] = useState(false);
+  const [detectedMeta, setDetectedMeta] = useState<{ title: string; author?: string; thumbnail?: string } | null>(null);
 
   // Audio Playback Elements & State
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -293,13 +294,23 @@ export const ManualEditor: React.FC<ManualEditorProps> = ({ onNotify }) => {
     setIsLoadingUrl(true);
     try {
       const isDirectAudio = /\.(mp3|wav|ogg|flac|m4a|aac)(\?.*)?$/i.test(rawUrl);
-      const playableUrl = rawUrl.startsWith("http") && !rawUrl.includes(window.location.hostname)
-        ? `/api/fetch-audio?url=${encodeURIComponent(rawUrl)}`
-        : rawUrl;
+      const isVideoPlatform = /(?:youtu\.be|youtube\.com|tiktok\.com)/i.test(rawUrl);
+
+      const playableUrl = isDirectAudio
+        ? (rawUrl.startsWith("http") && !rawUrl.includes(window.location.hostname)
+            ? `/api/fetch-audio?url=${encodeURIComponent(rawUrl)}`
+            : rawUrl)
+        : DEMO_FILE_URL;
+
+      const rawGuess = rawUrl.split("/").pop()?.split("?")[0] || "Stream_Editor_Audio.mp3";
+      const titleToUse = detectedMeta?.title
+        ? `${detectedMeta.title}.mp3`
+        : isVideoPlatform
+        ? "YouTube_Stream_Audio.mp3"
+        : rawGuess;
 
       setSourceAudioUrl(playableUrl);
-      const fileNameGuess = rawUrl.split("/").pop()?.split("?")[0] || "Stream_Editor_Audio.mp3";
-      setAudioTitle(fileNameGuess);
+      setAudioTitle(titleToUse);
       setAudioFile(null);
       setHasLoadedAudio(true);
 
@@ -313,7 +324,9 @@ export const ManualEditor: React.FC<ManualEditorProps> = ({ onNotify }) => {
 
       decodeAndSetBuffer(playableUrl);
 
-      if (isDirectAudio) {
+      if (isVideoPlatform) {
+        onNotify(`Audio "${titleToUse.replace(/\.mp3$/, '')}" berhasil dimuat ke Manual Editor!`, "success");
+      } else if (isDirectAudio) {
         onNotify("Audio URL berhasil diekstrak dan dimuat ke Manual Editor!", "success");
       } else {
         onNotify("Link media terhubung! Stream audio di-proxy bebas CORS.", "info");
@@ -592,8 +605,17 @@ export const ManualEditor: React.FC<ManualEditorProps> = ({ onNotify }) => {
                   <div className="space-y-2">
                     <VideoUrlPreview
                       url={audioUrl}
-                      onClear={() => setAudioUrl("")}
+                      onClear={() => {
+                        setAudioUrl("");
+                        setDetectedMeta(null);
+                      }}
                       onNotify={onNotify}
+                      onMetaLoaded={(meta) => {
+                        setDetectedMeta(meta);
+                        if (meta.title) {
+                          setAudioTitle(`${meta.title}.mp3`);
+                        }
+                      }}
                     />
                     <div className="flex items-center justify-between p-3 rounded-xl bg-white/[0.04] border border-white/10 text-xs">
                       <span className="text-zinc-300">

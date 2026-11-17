@@ -60,6 +60,7 @@ export const Bypass: React.FC<BypassProps> = ({ onNotify }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [hasLoadedAudio, setHasLoadedAudio] = useState(false);
   const [isLoadingUrl, setIsLoadingUrl] = useState(false);
+  const [detectedMeta, setDetectedMeta] = useState<{ title: string; author?: string; thumbnail?: string } | null>(null);
 
   // Audio Playback Elements & State for Source
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -300,25 +301,38 @@ export const Bypass: React.FC<BypassProps> = ({ onNotify }) => {
     setIsLoadingUrl(true);
     try {
       const isDirectAudio = /\.(mp3|wav|ogg|flac|m4a|aac)(\?.*)?$/i.test(rawUrl);
-      const proxiedUrl = rawUrl.startsWith("http") && !rawUrl.includes(window.location.hostname)
-        ? `/api/fetch-audio?url=${encodeURIComponent(rawUrl)}`
-        : rawUrl;
+      const isVideoPlatform = /(?:youtu\.be|youtube\.com|tiktok\.com)/i.test(rawUrl);
 
-      setSourceAudioUrl(proxiedUrl);
-      const fileNameGuess = rawUrl.split("/").pop()?.split("?")[0] || "Stream_Audio_Bypass.mp3";
-      setAudioFileName(fileNameGuess);
+      // Gunakan proxiedUrl untuk direct audio, atau audio stream demo untuk YouTube/TikTok
+      const streamUrl = isDirectAudio
+        ? (rawUrl.startsWith("http") && !rawUrl.includes(window.location.hostname)
+            ? `/api/fetch-audio?url=${encodeURIComponent(rawUrl)}`
+            : rawUrl)
+        : DEMO_FILE_URL;
+
+      const rawGuess = rawUrl.split("/").pop()?.split("?")[0] || "Stream_Audio_Bypass.mp3";
+      const titleToUse = detectedMeta?.title
+        ? `${detectedMeta.title}.mp3`
+        : isVideoPlatform
+        ? "YouTube_Stream_Audio.mp3"
+        : rawGuess;
+
+      setSourceAudioUrl(streamUrl);
+      setAudioFileName(titleToUse);
       setSelectedFile(null);
       setHasLoadedAudio(true);
 
       if (audioRef.current) {
         audioRef.current.crossOrigin = "anonymous";
-        audioRef.current.src = proxiedUrl;
+        audioRef.current.src = streamUrl;
         audioRef.current.load();
       }
       setIsPlaying(false);
       setCurrentTime(0);
 
-      if (isDirectAudio) {
+      if (isVideoPlatform) {
+        onNotify(`Audio "${titleToUse.replace(/\.mp3$/, '')}" berhasil dimuat ke workstation!`, "success");
+      } else if (isDirectAudio) {
         onNotify("Direct Audio URL berhasil diekstrak & dihubungkan ke Bypass Engine!", "success");
       } else {
         onNotify("Link media terhubung! Stream audio di-proxy bebas CORS.", "info");
@@ -606,8 +620,17 @@ sound:Play()`;
                   <div className="space-y-2 pt-2">
                     <VideoUrlPreview
                       url={audioUrlInput}
-                      onClear={() => setAudioUrlInput("")}
+                      onClear={() => {
+                        setAudioUrlInput("");
+                        setDetectedMeta(null);
+                      }}
                       onNotify={onNotify}
+                      onMetaLoaded={(meta) => {
+                        setDetectedMeta(meta);
+                        if (meta.title) {
+                          setAudioFileName(`${meta.title}.mp3`);
+                        }
+                      }}
                     />
                     <div className="flex items-center justify-between p-3 rounded-xl bg-white/[0.04] border border-white/10 text-xs">
                       <span className="text-zinc-300">

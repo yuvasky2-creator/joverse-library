@@ -10,6 +10,7 @@ import {
   Sparkles,
   Lock,
   ExternalLink,
+  Compass,
 } from "lucide-react";
 import { AudioMetadata } from "@/types/audio";
 import { FeedbackAndLikeSection } from "@/components/home/FeedbackAndLikeSection";
@@ -39,6 +40,13 @@ export const Home: React.FC<HomeProps> = ({ onRouteChange }) => {
       desc: "Equalizer 9-Band interaktif, modulasi tempo, amplifikasi gain, dan reverb digital.",
       icon: <Sliders className="w-5 h-5 text-zinc-200" />,
       badge: "DSP STUDIO",
+    },
+    {
+      id: "skybox",
+      label: "Skybox Converter",
+      desc: "Konversi panorama 360° menjadi 6 sisi Skybox Roblox (1024px) dengan preview 3D langsung.",
+      icon: <Compass className="w-5 h-5 text-zinc-200" />,
+      badge: "ROBLOX 3D",
     },
     {
       id: "analytics",
@@ -192,7 +200,7 @@ export const Home: React.FC<HomeProps> = ({ onRouteChange }) => {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {CORE_TOOLS.map((t) => (
             <button
               key={t.id}

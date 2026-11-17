@@ -6,8 +6,12 @@ interface MapDefinition {
   category: "Map Ekspedisi" | "Map Obstacle" | "Map Obby Tower" | "Map Hangout" | "Map Horor" | "Map Club";
   defaultTitle: string;
   defaultDescription: string;
+  defaultStatus: "published" | "private";
 }
 
+// Map yang terdaftar resmi dari Joverse Studio:
+// Mount Naresta & Petanahan Expedition berstatus Private (masih dalam tahap development)
+// Nalluka Race, NAISE OBSTACLE, Everdusk Pines, dan Lakeside Hangout berstatus Public (sudah live)
 const REGISTERED_MAPS: MapDefinition[] = [
   {
     id: "pf-naresta",
@@ -15,34 +19,39 @@ const REGISTERED_MAPS: MapDefinition[] = [
     category: "Map Ekspedisi",
     defaultTitle: "Mount Naresta Wilderness Trail Expedition",
     defaultDescription: "Rute pendakian pegunungan terjal dengan biome hutan pinus, cuaca kabut dinamis, dan sistem stamina survival.",
+    defaultStatus: "private",
   },
   {
     id: "pf-petanahan",
     placeId: "125277132946497",
     category: "Map Ekspedisi",
-    defaultTitle: "Petanahan Expedition",
+    defaultTitle: "Petanahan Expedition [ BETA ]",
     defaultDescription: "Eksplorasi alam liar pesisir dan tebing berbatu dengan mekanik pendakian realistis dan atmosfer pencahayaan sore hari.",
+    defaultStatus: "private",
   },
   {
     id: "pf-nalluka",
     placeId: "130077577067224",
     category: "Map Obstacle",
-    defaultTitle: "Nalluka Race 26 Checkpoint",
+    defaultTitle: "Nalluka Race - 26 Checkpoint",
     defaultDescription: "Lintasan balap rintangan kompetitif dengan 26 checkpoint bertingkat, trap berkecepatan tinggi, dan sistem leaderboard.",
+    defaultStatus: "published",
   },
   {
     id: "pf-naise",
     placeId: "78435078346136",
     category: "Map Obstacle",
-    defaultTitle: "NAISE OBSTACLE",
+    defaultTitle: "[ NEW + x10 ] NAISE OBSTACLE",
     defaultDescription: "Rangkaian arena obstacle interaktif dengan desain visual futuristik, stage bertingkat tanpa jeda lag, dan mekanik parkour.",
+    defaultStatus: "published",
   },
   {
     id: "pf-everdusk",
     placeId: "121211314613539",
     category: "Map Hangout",
-    defaultTitle: "Everdusk Pines New Hangout",
+    defaultTitle: "Everdusk Pines - New Hangout",
     defaultDescription: "Tempat bersantai bernuansa senja di tengah pepohonan pinus rindang dengan spot api unggun, musik santai, dan animasi.",
+    defaultStatus: "published",
   },
   {
     id: "pf-lakeside",
@@ -50,8 +59,11 @@ const REGISTERED_MAPS: MapDefinition[] = [
     category: "Map Hangout",
     defaultTitle: "Lakeside Hangout",
     defaultDescription: "Pemandangan tepi danau yang tenang dengan dermaga kayu, tata cahaya malam estetik, dan optimasi performa maksimal.",
+    defaultStatus: "published",
   },
 ];
+
+const KNOWN_PRIVATE_MAPS = new Set(["109721889873488", "125277132946497"]);
 
 function formatCount(num: number): string {
   if (num >= 1_000_000) {
@@ -63,13 +75,11 @@ function formatCount(num: number): string {
   return num.toString();
 }
 
-// In-memory cache di serverless instance untuk mencegah rate limit
 let cachedResponse: any = null;
 let lastCacheTime = 0;
-const CACHE_TTL_MS = 45_000; // 45 detik cache
+const CACHE_TTL_MS = 45_000;
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Set CORS headers lengkap
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
@@ -81,7 +91,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const queryPlaceId = (req.query.placeId as string)?.trim();
   const now = Date.now();
 
-  // Gunakan cache jika request umum (tanpa specific placeId)
   if (!queryPlaceId && cachedResponse && now - lastCacheTime < CACHE_TTL_MS) {
     return res.status(200).json({
       ...cachedResponse,
@@ -99,11 +108,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             category: "Map Ekspedisi" as const,
             defaultTitle: "Roblox Showcase Map",
             defaultDescription: "Showcase map Roblox Studio.",
+            defaultStatus: "published" as const,
           },
         ]
       : REGISTERED_MAPS;
 
-    // 1. Resolve Universe ID untuk setiap Place ID
+    // 1. Resolve Universe ID
     const universeIdMap: Record<string, number> = {};
     const universePromises = mapsToQuery.map(async (item) => {
       try {
@@ -143,32 +153,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const uIdsParam = validUniverseIds.join(",");
 
       const [gamesRes, playRes, voteRes, iconRes, placeIconRes, thumbRes] = await Promise.all([
-        // Game Info (Visits, Playing, RootPlaceId, Name, Description)
         fetch(`https://games.roblox.com/v1/games?universeIds=${uIdsParam}`, {
           headers: { "User-Agent": "Joverse-Roblox-API-Client/2.0" },
         }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
 
-        // Playability Status
         fetch(`https://games.roblox.com/v1/games/multiget-playability-status?universeIds=${uIdsParam}`, {
           headers: { "User-Agent": "Joverse-Roblox-API-Client/2.0" },
         }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
 
-        // Votes / Likes
         fetch(`https://games.roblox.com/v1/games/votes?universeIds=${uIdsParam}`, {
           headers: { "User-Agent": "Joverse-Roblox-API-Client/2.0" },
         }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
 
-        // High-res Universe Icons with PlaceHolder return policy
         fetch(`https://thumbnails.roblox.com/v1/games/icons?universeIds=${uIdsParam}&returnPolicy=PlaceHolder&size=512x512&format=Png&isCircular=false`, {
           headers: { "User-Agent": "Joverse-Roblox-API-Client/2.0" },
         }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
 
-        // Place Game Icons with PlaceHolder return policy
         fetch(`https://thumbnails.roblox.com/v1/places/gameicons?placeIds=${placeIdsParam}&returnPolicy=PlaceHolder&size=512x512&format=Png`, {
           headers: { "User-Agent": "Joverse-Roblox-API-Client/2.0" },
         }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
 
-        // High-res Thumbnails (16:9 banner)
         fetch(`https://thumbnails.roblox.com/v1/games/multiget/thumbnails?universeIds=${uIdsParam}&countPerUniverse=1&defaults=true&size=768x432&format=Png`, {
           headers: { "User-Agent": "Joverse-Roblox-API-Client/2.0" },
         }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
@@ -182,7 +186,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       thumbnailsData = thumbRes?.data || [];
     }
 
-    // 2. Gabungkan data dengan logika Public vs Private yang akurat
     const maps = mapsToQuery.map((def) => {
       const universeId = universeIdMap[def.placeId];
       const gameInfo = gamesData.find(
@@ -194,7 +197,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const placeIconInfo = placeIconsData.find((pic: any) => String(pic.targetId) === def.placeId);
       const thumbInfo = thumbnailsData.find((th: any) => th.universeId === universeId)?.thumbnails?.[0];
 
-      // Perhitungan Persentase Like
       let likePercent = 95;
       if (voteInfo) {
         const up = voteInfo.upVotes || 0;
@@ -205,27 +207,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
 
-      // PERBAIKAN LOGIKA STATUS PUBLIC VS PRIVATE:
-      // Sebuah game Roblox berstatus Public jika:
-      // 1. playabilityStatus adalah "Playable" ATAU
-      // 2. isPlayable bernilai true ATAU
-      // 3. Informasi game ditemukan di endpoint games (punya nama, visits, playing) dan TIDAK secara eksplisit "Privated" / "UniverseDoesNotExist"
-      let isPublished = true;
-      if (playability) {
+      // Deteksi Status Public vs Private Resmi:
+      // Map Mount Naresta & Petanahan adalah Private (sesuai setting Studio)
+      let isPublished = false;
+      if (KNOWN_PRIVATE_MAPS.has(def.placeId)) {
+        isPublished = false;
+      } else if (playability) {
         const statusStr = (playability.playabilityStatus || "").toString().toLowerCase();
-        if (statusStr === "privated" || statusStr === "universedoesnotexist" || statusStr === "gamenotfound") {
-          isPublished = false;
-        } else if (playability.isPlayable === true || statusStr === "playable" || statusStr === "guest") {
-          isPublished = true;
-        } else {
-          // Jika unauthenticated server request, cek apakah gameInfo terbit di Roblox katalog
-          isPublished = !!(gameInfo && gameInfo.name);
-        }
-      } else if (gameInfo && gameInfo.name) {
-        isPublished = true;
+        isPublished = playability.isPlayable === true || statusStr === "playable";
+      } else {
+        isPublished = def.defaultStatus === "published";
       }
 
-      // Thumbnail resolusi tinggi resmi dari CDN Roblox
+      // Thumbnail resmi dari Roblox
       const thumbnailUrl =
         thumbInfo?.imageUrl ||
         iconInfo?.imageUrl ||
@@ -252,8 +246,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         status: isPublished ? "published" : "private",
         stats: {
           online,
-          visits: visitsFormatted || "Showcase",
-          likePercent,
+          visits: isPublished ? (visitsFormatted || "Showcase") : "Private",
+          likePercent: isPublished ? likePercent : 0,
         },
       };
     });

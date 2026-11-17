@@ -46,7 +46,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const upstreamType = upstream.headers.get("content-type");
+    const upstreamType = upstream.headers.get("content-type") || "";
+    if (upstreamType.includes("text/html") && !targetUrl.match(/\.(mp3|wav|ogg|flac|m4a|aac)/i)) {
+      return res.status(415).json({
+        error: "URL mengarah ke halaman HTML, bukan file stream audio langsung.",
+      });
+    }
+
     const contentType =
       upstreamType && upstreamType.includes("audio")
         ? upstreamType

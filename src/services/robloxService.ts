@@ -22,7 +22,7 @@ export interface RealtimeRobloxMap {
 
 let cachedMaps: RealtimeRobloxMap[] | null = null;
 let lastFetchTime = 0;
-const CACHE_TTL_MS = 30_000; // 30 detik cache client
+const CACHE_TTL_MS = 30_000;
 
 export async function fetchRobloxPortfolio(forceRefresh = false): Promise<RealtimeRobloxMap[]> {
   const now = Date.now();
@@ -49,7 +49,6 @@ export async function fetchRobloxPortfolio(forceRefresh = false): Promise<Realti
     console.warn("Gagal memanggil /api/roblox/game-info, mencoba fallback:", err);
   }
 
-  // Coba route langsung /api/roblox jika rewrite belum reload
   try {
     const fallbackRes = await fetch("/api/roblox", {
       headers: { Accept: "application/json" },
@@ -66,62 +65,62 @@ export async function fetchRobloxPortfolio(forceRefresh = false): Promise<Realti
     // Ignore and proceed to static fallback
   }
 
-  // Fallback map resmi Joverse Studio jika koneksi offline / development lokal
+  // Fallback map resmi Joverse Studio (Status sesuai Roblox Studio asli)
   return [
     {
       id: "pf-naresta",
       placeId: "109721889873488",
-      title: "Mount Naresta Wilderness Trail Expedition",
+      title: "Mount Naresta - Wilderness Trail...",
       category: "Map Ekspedisi",
-      description: "Petualangan rute pendakian pegunungan terjal dengan biome hutan pinus, cuaca kabut dinamis, dan sistem stamina checkpoint survival.",
+      description: "Rute pendakian pegunungan terjal dengan biome hutan pinus, cuaca kabut dinamis, dan sistem stamina survival.",
       robloxUrl: "https://www.roblox.com/id/games/109721889873488/Mount-Naresta-Wilderness-Trail-Expedition",
       thumbnailUrl: "https://tr.rbxcdn.com/180DAY-109721889873488/512/512/Image/Png",
-      status: "published",
-      stats: { online: 0, visits: "Showcase", likePercent: 96 },
+      status: "private",
+      stats: { online: 0, visits: "Private", likePercent: 0 },
     },
     {
       id: "pf-petanahan",
       placeId: "125277132946497",
-      title: "Petanahan Expedition",
+      title: "Petanahan Expedition [ BETA ]",
       category: "Map Ekspedisi",
-      description: "Eksplorasi alam liar pesisir dan tebing berbatu dengan mekanik pendakian realistis dan atmosfer pencahayaan sore hari yang memukau.",
+      description: "Eksplorasi alam liar pesisir dan tebing berbatu dengan mekanik pendakian realistis dan atmosfer pencahayaan sore hari.",
       robloxUrl: "https://www.roblox.com/id/games/125277132946497/Petanahan-Expedition",
       thumbnailUrl: "https://tr.rbxcdn.com/180DAY-125277132946497/512/512/Image/Png",
-      status: "published",
-      stats: { online: 0, visits: "Showcase", likePercent: 94 },
+      status: "private",
+      stats: { online: 0, visits: "Private", likePercent: 0 },
     },
     {
       id: "pf-nalluka",
       placeId: "130077577067224",
-      title: "Nalluka Race 26 Checkpoint",
+      title: "Nalluka Race – 26 Checkpoint",
       category: "Map Obstacle",
       description: "Lintasan balap rintangan kompetitif dengan 26 checkpoint bertingkat, trap berkecepatan tinggi, dan sistem leaderboard waktu presisi.",
       robloxUrl: "https://www.roblox.com/id/games/130077577067224/Nalluka-Race-26-Checkpoint",
       thumbnailUrl: "https://tr.rbxcdn.com/180DAY-130077577067224/512/512/Image/Png",
       status: "published",
-      stats: { online: 0, visits: "Showcase", likePercent: 92 },
+      stats: { online: 0, visits: "2.4K", likePercent: 70 },
     },
     {
       id: "pf-naise",
       placeId: "78435078346136",
-      title: "NAISE OBSTACLE",
+      title: "[ NEW + x10 ] NAISE OBSTACLE",
       category: "Map Obstacle",
       description: "Rangkaian arena obstacle interaktif dengan desain visual futuristik, stage bertingkat tanpa jeda lag, dan mekanik parkour mulus.",
       robloxUrl: "https://www.roblox.com/id/games/78435078346136/NAISE-OBSTACLE",
       thumbnailUrl: "https://tr.rbxcdn.com/180DAY-78435078346136/512/512/Image/Png",
       status: "published",
-      stats: { online: 0, visits: "Showcase", likePercent: 95 },
+      stats: { online: 0, visits: "988", likePercent: 72 },
     },
     {
       id: "pf-everdusk",
       placeId: "121211314613539",
-      title: "Everdusk Pines New Hangout",
+      title: "Everdusk Pines – New Hangout",
       category: "Map Hangout",
       description: "Tempat bersantai bernuansa senja di tengah pepohonan pinus rindang dengan spot api unggun, musik santai, dan sistem animasi interaktif.",
       robloxUrl: "https://www.roblox.com/id/games/121211314613539/Everdusk-Pines-New-Hangout",
       thumbnailUrl: "https://tr.rbxcdn.com/180DAY-121211314613539/512/512/Image/Png",
       status: "published",
-      stats: { online: 0, visits: "Showcase", likePercent: 98 },
+      stats: { online: 0, visits: "24", likePercent: 100 },
     },
     {
       id: "pf-lakeside",
@@ -132,7 +131,7 @@ export async function fetchRobloxPortfolio(forceRefresh = false): Promise<Realti
       robloxUrl: "https://www.roblox.com/id/games/87870146202685/Lakeside-Hangout",
       thumbnailUrl: "https://tr.rbxcdn.com/180DAY-87870146202685/512/512/Image/Png",
       status: "published",
-      stats: { online: 0, visits: "Showcase", likePercent: 97 },
+      stats: { online: 0, visits: "199", likePercent: 100 },
     },
   ];
 }
