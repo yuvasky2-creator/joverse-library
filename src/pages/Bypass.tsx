@@ -66,7 +66,7 @@ const DEMO_AUDIOS: DemoAudioItem[] = [
     artist: "Wiro x Yogi SJ Remix",
     tag: "Jedag-Jedug Viral",
     badge: "TikTok Trending",
-    url: "/samples/DJ%20I%20WILL%20BE%20FINE.mp3",
+    url: "/samples/dj-i-will-be-fine.mp3",
     description: "Bass jedag-jedug khas remix TikTok dengan drop punchy.",
   },
   {
@@ -75,7 +75,7 @@ const DEMO_AUDIOS: DemoAudioItem[] = [
     artist: "DJ Koplo Viral",
     tag: "Koplo Bass Boost",
     badge: "Club Favorite",
-    url: "/samples/DJ%20NEGORO%20ANGIN.mp3",
+    url: "/samples/dj-negoro-angin.mp3",
     description: "Koplo modern beat cepat cocok untuk testing bypass speed 2.3x.",
   },
   {
@@ -84,7 +84,7 @@ const DEMO_AUDIOS: DemoAudioItem[] = [
     artist: "Holiday Remix Edit",
     tag: "Special Holiday",
     badge: "EDM Mix",
-    url: "/samples/MERRY%20CHRISTMAS.mp3",
+    url: "/samples/merry-christmas.mp3",
     description: "Melodi pesta bertempo energik dengan spektrum frekuensi luas.",
   },
 ];

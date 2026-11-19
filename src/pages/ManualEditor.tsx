@@ -61,7 +61,7 @@ const DEMO_AUDIOS: DemoTrackItem[] = [
     artist: "Wiro x Yogi SJ Remix",
     tag: "Jedag-Jedug Viral",
     badge: "TikTok Trending",
-    url: "/samples/DJ%20I%20WILL%20BE%20FINE.mp3",
+    url: "/samples/dj-i-will-be-fine.mp3",
   },
   {
     id: "negoro",
@@ -69,7 +69,7 @@ const DEMO_AUDIOS: DemoTrackItem[] = [
     artist: "DJ Koplo Viral",
     tag: "Koplo Bass Boost",
     badge: "Club Favorite",
-    url: "/samples/DJ%20NEGORO%20ANGIN.mp3",
+    url: "/samples/dj-negoro-angin.mp3",
   },
   {
     id: "xmas",
@@ -77,7 +77,7 @@ const DEMO_AUDIOS: DemoTrackItem[] = [
     artist: "Holiday Remix Edit",
     tag: "Special Holiday",
     badge: "EDM Mix",
-    url: "/samples/MERRY%20CHRISTMAS.mp3",
+    url: "/samples/merry-christmas.mp3",
   },
 ];
 

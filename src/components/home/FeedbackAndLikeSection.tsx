@@ -111,12 +111,12 @@ export const FeedbackAndLikeSection: React.FC = () => {
     }
   }, []);
 
-  // Poll / refresh otomatis setiap 6 detik agar komen & like user lain langsung muncul secara real-time
+  // Poll / refresh otomatis setiap 3.5 detik agar komen & like user lain langsung muncul secara real-time
   useEffect(() => {
     fetchCommunityData();
     const interval = setInterval(() => {
       fetchCommunityData();
-    }, 6_000);
+    }, 3_500);
     return () => clearInterval(interval);
   }, [fetchCommunityData]);
 

@@ -1,11 +1,13 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { fastHash } from "@/utils/crypto";
 
+export type UserRole = "owner" | "admin" | "member";
+
 export interface User {
   id: string;
   username: string;
   avatar: string;
-  role: "owner" | "admin" | "member";
+  role: UserRole;
   plan: "free" | "3day" | "7day" | "30day" | "lifetime";
   createdAt: string;
 }

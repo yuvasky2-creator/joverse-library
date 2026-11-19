@@ -23,16 +23,39 @@ import { AudioMetadata } from "@/types/audio";
 export const AppContent: React.FC = () => {
   const [currentRoute, setCurrentRoute] = useState<string>("home");
 
-  // Hash listener untuk membuka portal admin via URL /#admin
+  // Route listener untuk membuka halaman via URL pathname atau hash
   React.useEffect(() => {
-    const handleHash = () => {
-      if (window.location.hash === "#admin" || window.location.hash === "#staff") {
+    const handleRoute = () => {
+      const path = window.location.pathname.replace(/^\//, "").toLowerCase();
+      const hash = window.location.hash.replace(/^#/, "").toLowerCase();
+      const target = path || hash;
+
+      if (target === "admin" || target === "staff") {
         setCurrentRoute("admin");
+      } else if (target === "pricing" || target === "price") {
+        setCurrentRoute("pricing");
+      } else if (target === "gallery") {
+        setCurrentRoute("gallery");
+      } else if (target === "skybox") {
+        setCurrentRoute("skybox");
+      } else if (target === "portfolio" || target === "portofolio") {
+        setCurrentRoute("portfolio");
+      } else if (target === "editor") {
+        setCurrentRoute("editor");
+      } else if (target === "bypass") {
+        setCurrentRoute("bypass");
+      } else if (target === "analytics" || target === "stats") {
+        setCurrentRoute("analytics");
       }
     };
-    handleHash();
-    window.addEventListener("hashchange", handleHash);
-    return () => window.removeEventListener("hashchange", handleHash);
+
+    handleRoute();
+    window.addEventListener("hashchange", handleRoute);
+    window.addEventListener("popstate", handleRoute);
+    return () => {
+      window.removeEventListener("hashchange", handleRoute);
+      window.removeEventListener("popstate", handleRoute);
+    };
   }, []);
 
   // Global Audio State (shared across pages)

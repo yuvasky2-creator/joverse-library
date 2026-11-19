@@ -99,6 +99,8 @@ export const Gallery: React.FC<GalleryProps> = ({ onNotify }) => {
 
   // Upload Modal State
   const [isUploadModalOpen, setIsUploadModalOpen] = useState<boolean>(false);
+  const [albumToDelete, setAlbumToDelete] = useState<GalleryAlbum | null>(null);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const [newTitle, setNewTitle] = useState<string>("");
   const [newCategory, setNewCategory] = useState<GalleryAlbum["category"]>("Map Obstacle");
   const [newDescription, setNewDescription] = useState<string>("");
@@ -207,6 +209,46 @@ export const Gallery: React.FC<GalleryProps> = ({ onNotify }) => {
       }
     } catch (err) {
       console.warn("Like sync warning:", err);
+    }
+  };
+
+  // Handle Delete Album (Owner / Admin only)
+  const handleDeleteAlbum = async (albumId: string) => {
+    setIsDeleting(true);
+    // Optimistic local removal
+    setAlbums((prev) => {
+      const updated = prev.filter((a) => a.id !== albumId);
+      try {
+        localStorage.setItem(LOCAL_STORAGE_GALLERY_KEY, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+
+    if (activeAlbum?.id === albumId) {
+      setActiveAlbum(null);
+    }
+
+    try {
+      const res = await fetch("/api/gallery", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "delete_album",
+          albumId,
+        }),
+      });
+
+      if (res.ok) {
+        onNotify?.("Showcase album berhasil dihapus dari galeri!", "success");
+      } else {
+        onNotify?.("Album dihapus dari penyimpanan lokal.", "info");
+      }
+    } catch (err) {
+      console.warn("Delete album error:", err);
+      onNotify?.("Album dihapus dari tampilan lokal.", "info");
+    } finally {
+      setIsDeleting(false);
+      setAlbumToDelete(null);
     }
   };
 
@@ -341,6 +383,19 @@ export const Gallery: React.FC<GalleryProps> = ({ onNotify }) => {
     }
   };
 
+  const handleOpenUpload = () => {
+    if (!user) {
+      openAuthModal();
+      onNotify?.("Silakan login sebagai Owner atau Admin untuk mengunggah showcase.", "info");
+      return;
+    }
+    if (!isOwnerOrAdmin) {
+      onNotify?.("Akses dibatasi: Hanya Owner dan Admin yang memiliki izin mengunggah showcase baru.", "error");
+      return;
+    }
+    setIsUploadModalOpen(true);
+  };
+
   const categories = [
     "Semua",
     "Map Ekspedisi",
@@ -377,7 +432,7 @@ export const Gallery: React.FC<GalleryProps> = ({ onNotify }) => {
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={() => setIsUploadModalOpen(true)}
+            onClick={handleOpenUpload}
             className="px-5 py-2.5 rounded-xl bg-white text-zinc-950 font-bold text-xs hover:bg-zinc-200 transition-all shadow-md active:scale-95 cursor-pointer flex items-center gap-2 font-mono"
           >
             <Plus className="w-4 h-4 text-zinc-950" />
@@ -425,7 +480,7 @@ export const Gallery: React.FC<GalleryProps> = ({ onNotify }) => {
           </div>
           <button
             type="button"
-            onClick={() => setIsUploadModalOpen(true)}
+            onClick={handleOpenUpload}
             className="px-5 py-2.5 rounded-xl bg-white text-zinc-950 font-bold text-xs hover:bg-zinc-200 transition-all shadow-md active:scale-95 cursor-pointer inline-flex items-center gap-2 font-mono"
           >
             <Plus className="w-4 h-4 text-zinc-950" />
@@ -564,6 +619,18 @@ export const Gallery: React.FC<GalleryProps> = ({ onNotify }) => {
                       >
                         <Maximize2 className="w-3.5 h-3.5" />
                       </button>
+
+                      {/* Delete Album Button (Owner/Admin Only) */}
+                      {isOwnerOrAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => setAlbumToDelete(album)}
+                          className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border border-rose-500/20 cursor-pointer transition-all"
+                          title="Hapus Showcase Album Ini"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -611,6 +678,17 @@ export const Gallery: React.FC<GalleryProps> = ({ onNotify }) => {
                   />
                   <span>{activeAlbum.likesCount} Suka</span>
                 </button>
+
+                {isOwnerOrAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setAlbumToDelete(activeAlbum)}
+                    className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-400 hover:bg-rose-500/10 transition-all cursor-pointer border border-transparent hover:border-rose-500/20"
+                    title="Hapus Album Ini"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
 
                 <button
                   type="button"
@@ -920,6 +998,75 @@ export const Gallery: React.FC<GalleryProps> = ({ onNotify }) => {
                   )}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL KONFIRMASI HAPUS SHOWCASE ALBUM (OWNER/ADMIN) ── */}
+      {albumToDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fadeIn"
+          onClick={() => !isDeleting && setAlbumToDelete(null)}
+        >
+          <div
+            className="w-full max-w-md bg-zinc-950 border border-white/20 rounded-2xl p-6 space-y-4 shadow-2xl relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white font-['Sora']">
+                  Hapus Album Showcase
+                </h3>
+                <p className="text-xs text-zinc-400">
+                  Tindakan ini permanen dan menghapus foto dari galeri
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-zinc-900/70 border border-white/5 space-y-1.5">
+              <p className="text-xs text-zinc-300">
+                Apakah Anda yakin ingin menghapus album showcase:
+              </p>
+              <p className="text-sm font-bold text-white font-mono">
+                "{albumToDelete.title}"
+              </p>
+              <p className="text-[11px] text-zinc-500 font-mono">
+                Kategori: {albumToDelete.category} &middot; {albumToDelete.images.length} Foto
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setAlbumToDelete(null)}
+                disabled={isDeleting}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white transition-all cursor-pointer"
+              >
+                Batal
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleDeleteAlbum(albumToDelete.id)}
+                disabled={isDeleting}
+                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs transition-all flex items-center gap-2 cursor-pointer shadow-lg shadow-rose-950/50"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Menghapus...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Hapus Permanen</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>
