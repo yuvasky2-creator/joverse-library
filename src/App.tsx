@@ -7,6 +7,7 @@ import { Home } from "@/pages/Home";
 import { Bypass } from "@/pages/Bypass";
 import { ManualEditor } from "@/pages/ManualEditor";
 import { SkyboxConverter } from "@/pages/SkyboxConverter";
+import { Gallery } from "@/pages/Gallery";
 import { Pricing } from "@/pages/Pricing";
 import { Portfolio } from "@/pages/Portfolio";
 import { OwnerPortal } from "@/pages/OwnerPortal";
@@ -118,6 +119,11 @@ export const AppContent: React.FC = () => {
         {/* 3. Skybox Converter (Roblox 6-Side Cubemap) */}
         {currentRoute === "skybox" && (
           <SkyboxConverter onNotify={(msg, type) => addToast(type || "info", msg)} />
+        )}
+
+        {/* 3b. Build Showcase Gallery (1-20 Photos per Album) */}
+        {currentRoute === "gallery" && (
+          <Gallery onNotify={(msg, type) => addToast(type || "info", msg)} />
         )}
 
         {/* 4. Stats & Grafik Penggunaan Global */}

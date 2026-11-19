@@ -133,5 +133,16 @@ export async function fetchRobloxPortfolio(forceRefresh = false): Promise<Realti
       status: "published",
       stats: { online: 0, visits: "199", likePercent: 100 },
     },
+    {
+      id: "pf-nerava",
+      placeId: "134517367608142",
+      title: "Mount Nerava – 30 Checkpoints",
+      category: "Map Obstacle",
+      description: "Rute balap rintangan bertingkat ekstrem dengan 30 checkpoint menantang, elevasi pegunungan tinggi, dan navigasi presisi.",
+      robloxUrl: "https://www.roblox.com/id/games/134517367608142/Mount-Nerava-30-Checkpoints",
+      thumbnailUrl: "https://tr.rbxcdn.com/180DAY-134517367608142/512/512/Image/Png",
+      status: "published",
+      stats: { online: 0, visits: "1.2K", likePercent: 95 },
+    },
   ];
 }

@@ -60,6 +60,54 @@ export const ManualEditor: React.FC<ManualEditorProps> = ({ onNotify }) => {
 
   // Audio Playback Elements & State
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const eqFiltersRef = useRef<BiquadFilterNode[]>([]);
+  const gainNodeRef = useRef<GainNode | null>(null);
+
+  const initLiveEqGraph = () => {
+    if (audioCtxRef.current || !audioRef.current) return;
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      const ctx = new AudioCtx();
+      audioCtxRef.current = ctx;
+
+      const source = ctx.createMediaElementSource(audioRef.current);
+      sourceNodeRef.current = source;
+
+      const freqs = [60, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+      const filters = freqs.map((freq, i) => {
+        const f = ctx.createBiquadFilter();
+        f.frequency.value = freq;
+        if (i === 0) {
+          f.type = "lowshelf";
+        } else if (i === freqs.length - 1) {
+          f.type = "highshelf";
+        } else {
+          f.type = "peaking";
+          f.Q.value = 1.4;
+        }
+        f.gain.value = eqGains[i] || 0;
+        return f;
+      });
+      eqFiltersRef.current = filters;
+
+      const gain = ctx.createGain();
+      gain.gain.value = Math.min(2.0, volume);
+      gainNodeRef.current = gain;
+
+      let lastNode: AudioNode = source;
+      for (const filter of filters) {
+        lastNode.connect(filter);
+        lastNode = filter;
+      }
+      lastNode.connect(gain);
+      gain.connect(ctx.destination);
+    } catch (err) {
+      console.warn("Live EQ Graph notice:", err);
+    }
+  };
+
   const [sourceAudioUrl, setSourceAudioUrl] = useState<string>("");
   const [audioTitle, setAudioTitle] = useState("");
   const [duration, setDuration] = useState(0);
@@ -101,14 +149,29 @@ export const ManualEditor: React.FC<ManualEditorProps> = ({ onNotify }) => {
   const [exportedCurrentTime, setExportedCurrentTime] = useState(0);
   const [exportedDuration, setExportedDuration] = useState(0);
 
-  // Sync speed and volume to audio element
+  // Sinkronisasi speed, volume, dan seamless loop secara real-time ke audio & DSP node
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.playbackRate = speed;
-      audioRef.current.volume = Math.min(1.0, volume);
       audioRef.current.loop = seamlessLoop;
+      if (gainNodeRef.current && audioCtxRef.current) {
+        gainNodeRef.current.gain.setTargetAtTime(Math.min(2.0, volume), audioCtxRef.current.currentTime, 0.03);
+      } else {
+        audioRef.current.volume = Math.min(1.0, volume);
+      }
     }
   }, [speed, volume, seamlessLoop]);
+
+  // Sinkronisasi 9-Band EQ secara real-time saat slider digeser: suara langsung berubah seketika!
+  useEffect(() => {
+    if (eqFiltersRef.current.length > 0 && audioCtxRef.current) {
+      eqFiltersRef.current.forEach((filter, i) => {
+        if (filter && typeof eqGains[i] === "number") {
+          filter.gain.setTargetAtTime(eqGains[i], audioCtxRef.current!.currentTime, 0.03);
+        }
+      });
+    }
+  }, [eqGains]);
 
   // Estimasi ukuran file hasil ekspor
   const activeDuration = trimEnabled ? Math.max(0.1, trimEnd - trimStart) : duration;
@@ -180,6 +243,10 @@ export const ManualEditor: React.FC<ManualEditorProps> = ({ onNotify }) => {
 
   const togglePlaySource = () => {
     if (!audioRef.current) return;
+    initLiveEqGraph();
+    if (audioCtxRef.current && audioCtxRef.current.state === "suspended") {
+      audioCtxRef.current.resume();
+    }
     if (exportedAudioRef.current && isExportedPlaying) {
       exportedAudioRef.current.pause();
       setIsExportedPlaying(false);
@@ -296,11 +363,10 @@ export const ManualEditor: React.FC<ManualEditorProps> = ({ onNotify }) => {
       const isDirectAudio = /\.(mp3|wav|ogg|flac|m4a|aac)(\?.*)?$/i.test(rawUrl);
       const isVideoPlatform = /(?:youtu\.be|youtube\.com|tiktok\.com)/i.test(rawUrl);
 
-      const playableUrl = isDirectAudio
-        ? (rawUrl.startsWith("http") && !rawUrl.includes(window.location.hostname)
-            ? `/api/fetch-audio?url=${encodeURIComponent(rawUrl)}`
-            : rawUrl)
-        : DEMO_FILE_URL;
+      // Gunakan proxy stream audio asli untuk YouTube atau direct audio URL
+      const playableUrl = rawUrl.startsWith("http") && !rawUrl.includes(window.location.hostname)
+        ? `/api/fetch-audio?url=${encodeURIComponent(rawUrl)}`
+        : rawUrl;
 
       const rawGuess = rawUrl.split("/").pop()?.split("?")[0] || "Stream_Editor_Audio.mp3";
       const titleToUse = detectedMeta?.title

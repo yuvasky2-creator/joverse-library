@@ -13,6 +13,7 @@ import {
   UserPlus,
   LayoutGrid,
   Compass,
+  Images,
 } from "lucide-react";
 import { getSiteConfig } from "@/config/siteConfig";
 
@@ -46,6 +47,11 @@ export const Navbar: React.FC<NavbarProps> = ({
       id: "skybox",
       label: "Skybox",
       icon: <Compass className="w-3.5 h-3.5" />,
+    },
+    {
+      id: "gallery",
+      label: "Gallery",
+      icon: <Images className="w-3.5 h-3.5" />,
     },
     {
       id: "analytics",

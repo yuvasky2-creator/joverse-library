@@ -11,6 +11,7 @@ import {
   Lock,
   ExternalLink,
   Compass,
+  Images,
 } from "lucide-react";
 import { AudioMetadata } from "@/types/audio";
 import { FeedbackAndLikeSection } from "@/components/home/FeedbackAndLikeSection";
@@ -47,6 +48,13 @@ export const Home: React.FC<HomeProps> = ({ onRouteChange }) => {
       desc: "Konversi panorama 360° menjadi 6 sisi Skybox Roblox (1024px) dengan preview 3D langsung.",
       icon: <Compass className="w-5 h-5 text-zinc-200" />,
       badge: "ROBLOX 3D",
+    },
+    {
+      id: "gallery",
+      label: "Showcase Gallery",
+      desc: "Galeri foto hasil build map Roblox resolusi tinggi (1-20 foto per album) dengan fitur Like real-time.",
+      icon: <Images className="w-5 h-5 text-zinc-200" />,
+      badge: "GALLERY",
     },
     {
       id: "analytics",

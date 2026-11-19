@@ -64,6 +64,51 @@ export const Bypass: React.FC<BypassProps> = ({ onNotify }) => {
 
   // Audio Playback Elements & State for Source
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const gainNodeRef = useRef<GainNode | null>(null);
+  const bassBoostNodeRef = useRef<BiquadFilterNode | null>(null);
+  const highShelfNodeRef = useRef<BiquadFilterNode | null>(null);
+
+  const initLiveDspGraph = () => {
+    if (audioCtxRef.current || !audioRef.current) return;
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      const ctx = new AudioCtx();
+      audioCtxRef.current = ctx;
+
+      const source = ctx.createMediaElementSource(audioRef.current);
+      sourceNodeRef.current = source;
+
+      // Gain Node untuk Amplify Gain
+      const gain = ctx.createGain();
+      const linearGain = Math.pow(10, amplifyGain / 20);
+      gain.gain.value = linearGain;
+      gainNodeRef.current = gain;
+
+      // Bass Boost untuk Sub-bass Layer
+      const bass = ctx.createBiquadFilter();
+      bass.type = "lowshelf";
+      bass.frequency.value = 85;
+      bass.gain.value = subBassLayer * 1.5;
+      bassBoostNodeRef.current = bass;
+
+      // High Shelf untuk Texture & Noise Shimmer
+      const high = ctx.createBiquadFilter();
+      high.type = "highshelf";
+      high.frequency.value = 6000;
+      high.gain.value = microNoise * 0.8;
+      highShelfNodeRef.current = high;
+
+      source.connect(bass);
+      bass.connect(high);
+      high.connect(gain);
+      gain.connect(ctx.destination);
+    } catch (err) {
+      console.warn("Live Web Audio DSP notice:", err);
+    }
+  };
+
   const [sourceAudioUrl, setSourceAudioUrl] = useState<string>("");
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -120,16 +165,35 @@ export const Bypass: React.FC<BypassProps> = ({ onNotify }) => {
   // Roblox Studio Limit Checks
   const robloxLimits = AudioProcessor.checkRobloxLimits(duration, estimatedSizeBytes);
 
-  // Sinkronisasi playbackRate saat A/B testing
+  // Sinkronisasi Real-Time DSP Parameters (Speed, Gain, Bass, Noise) saat slider digeser / A-B testing
   useEffect(() => {
     if (audioRef.current) {
       if (abTestMode === "bypassed") {
         audioRef.current.playbackRate = speedMultiplier;
+        if (gainNodeRef.current && audioCtxRef.current) {
+          const linearGain = Math.pow(10, amplifyGain / 20);
+          gainNodeRef.current.gain.setTargetAtTime(linearGain, audioCtxRef.current.currentTime, 0.04);
+        }
+        if (bassBoostNodeRef.current && audioCtxRef.current) {
+          bassBoostNodeRef.current.gain.setTargetAtTime(subBassLayer * 1.5, audioCtxRef.current.currentTime, 0.04);
+        }
+        if (highShelfNodeRef.current && audioCtxRef.current) {
+          highShelfNodeRef.current.gain.setTargetAtTime(microNoise * 0.8, audioCtxRef.current.currentTime, 0.04);
+        }
       } else {
         audioRef.current.playbackRate = 1.0;
+        if (gainNodeRef.current && audioCtxRef.current) {
+          gainNodeRef.current.gain.setTargetAtTime(1.0, audioCtxRef.current.currentTime, 0.04);
+        }
+        if (bassBoostNodeRef.current && audioCtxRef.current) {
+          bassBoostNodeRef.current.gain.setTargetAtTime(0, audioCtxRef.current.currentTime, 0.04);
+        }
+        if (highShelfNodeRef.current && audioCtxRef.current) {
+          highShelfNodeRef.current.gain.setTargetAtTime(0, audioCtxRef.current.currentTime, 0.04);
+        }
       }
     }
-  }, [abTestMode, speedMultiplier]);
+  }, [abTestMode, speedMultiplier, amplifyGain, subBassLayer, microNoise]);
 
   // Audio event listeners for source audio
   const handleLoadedMetadata = () => {
@@ -154,6 +218,10 @@ export const Bypass: React.FC<BypassProps> = ({ onNotify }) => {
 
   const togglePlaySource = () => {
     if (!audioRef.current) return;
+    initLiveDspGraph();
+    if (audioCtxRef.current && audioCtxRef.current.state === "suspended") {
+      audioCtxRef.current.resume();
+    }
     if (exportedAudioRef.current && isExportedPlaying) {
       exportedAudioRef.current.pause();
       setIsExportedPlaying(false);
@@ -303,12 +371,10 @@ export const Bypass: React.FC<BypassProps> = ({ onNotify }) => {
       const isDirectAudio = /\.(mp3|wav|ogg|flac|m4a|aac)(\?.*)?$/i.test(rawUrl);
       const isVideoPlatform = /(?:youtu\.be|youtube\.com|tiktok\.com)/i.test(rawUrl);
 
-      // Gunakan proxiedUrl untuk direct audio, atau audio stream demo untuk YouTube/TikTok
-      const streamUrl = isDirectAudio
-        ? (rawUrl.startsWith("http") && !rawUrl.includes(window.location.hostname)
-            ? `/api/fetch-audio?url=${encodeURIComponent(rawUrl)}`
-            : rawUrl)
-        : DEMO_FILE_URL;
+      // Gunakan proxy stream audio asli untuk YouTube atau direct audio URL
+      const streamUrl = rawUrl.startsWith("http") && !rawUrl.includes(window.location.hostname)
+        ? `/api/fetch-audio?url=${encodeURIComponent(rawUrl)}`
+        : rawUrl;
 
       const rawGuess = rawUrl.split("/").pop()?.split("?")[0] || "Stream_Audio_Bypass.mp3";
       const titleToUse = detectedMeta?.title

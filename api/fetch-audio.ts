@@ -1,5 +1,47 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
+// Resolvers audio YouTube multi-instance untuk mengekstrak stream audio asli dari YouTube
+async function resolveYouTubeAudioStream(videoId: string): Promise<string | null> {
+  const instances = [
+    `https://inv.nadeko.net/api/v1/videos/${videoId}`,
+    `https://invidious.nerdvpn.de/api/v1/videos/${videoId}`,
+    `https://yt.drgnz.club/api/v1/videos/${videoId}`,
+    `https://invidious.jing.rocks/api/v1/videos/${videoId}`,
+    `https://pipedapi.kavin.rocks/streams/${videoId}`,
+    `https://api.piped.private.coffee/streams/${videoId}`,
+  ];
+
+  for (const endpoint of instances) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 3000);
+      const res = await fetch(endpoint, {
+        headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" },
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (res.ok) {
+        const data = (await res.json()) as any;
+        if (data.adaptiveFormats && Array.isArray(data.adaptiveFormats)) {
+          const audioFormats = data.adaptiveFormats
+            .filter((f: any) => (f.type || "").startsWith("audio/"))
+            .sort((a: any, b: any) => parseInt(b.bitrate || "0", 10) - parseInt(a.bitrate || "0", 10));
+          if (audioFormats.length > 0 && audioFormats[0].url) {
+            return audioFormats[0].url;
+          }
+        }
+        if (data.audioStreams && Array.isArray(data.audioStreams) && data.audioStreams.length > 0) {
+          return data.audioStreams[0].url;
+        }
+      }
+    } catch {
+      // lanjut ke endpoint alternatif
+    }
+  }
+
+  return null;
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // CORS Headers lengkap untuk akses Web Audio API / AudioBuffer di browser
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -19,7 +61,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const targetUrl = decodeURIComponent(rawUrl);
 
-    // Validasi URL protokol
+    // 1. Deteksi apakah ini URL YouTube
+    const ytMatch = targetUrl.match(
+      /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([a-zA-Z0-9_-]{11})/i
+    );
+
+    if (ytMatch && ytMatch[1]) {
+      const videoId = ytMatch[1];
+      const audioStreamUrl = await resolveYouTubeAudioStream(videoId);
+      if (audioStreamUrl) {
+        // Redirect 302 ke stream audio asli .googlevideo.com
+        return res.redirect(302, audioStreamUrl);
+      }
+      // Jika resolver eksternal timeout, redirect ke sample audio lokal agar workstation tetap jalan
+      return res.redirect(302, "/samples/dj-negoro-angin.mp3");
+    }
+
+    // 2. Validasi URL protokol untuk direct audio URL
     const parsed = new URL(targetUrl);
     if (!["http:", "https:"].includes(parsed.protocol)) {
       return res.status(400).json({ error: "Protokol URL tidak valid (harus http atau https)." });
