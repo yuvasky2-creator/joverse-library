@@ -383,6 +383,11 @@ export const ManualEditor: React.FC<ManualEditorProps> = ({ onNotify }) => {
       if (audioRef.current) {
         audioRef.current.crossOrigin = "anonymous";
         audioRef.current.src = playableUrl;
+        audioRef.current.onerror = () => {
+          if (isVideoPlatform) {
+            onNotify("YouTube membatasi streaming langsung. Gunakan tombol 'Unduh MP3' lalu upload file ke Manual Editor!", "info");
+          }
+        };
         audioRef.current.load();
       }
       setIsPlaying(false);

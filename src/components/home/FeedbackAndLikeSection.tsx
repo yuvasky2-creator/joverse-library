@@ -68,13 +68,26 @@ export const FeedbackAndLikeSection: React.FC = () => {
   });
 
   // Form State
+  const [guestName, setGuestName] = useState<string>("");
   const [rating, setRating] = useState<number>(5);
   const [hoverRating, setHoverRating] = useState<number>(0);
   const [comment, setComment] = useState<string>("");
   const [submitted, setSubmitted] = useState<boolean>(false);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
-  const hasLiked = user ? likes.includes(user.id) : false;
+  // Persistent Guest ID untuk like & komen pengunjung publik tanpa login
+  const getVisitorId = useCallback(() => {
+    if (user?.id) return user.id;
+    let gid = localStorage.getItem("joverse_visitor_uid");
+    if (!gid) {
+      gid = "guest_" + Math.random().toString(36).substring(2, 9);
+      localStorage.setItem("joverse_visitor_uid", gid);
+    }
+    return gid;
+  }, [user]);
+
+  const activeUserId = getVisitorId();
+  const hasLiked = likes.includes(activeUserId);
 
   // Sinkronisasi data real-time dengan serverless backend /api/community
   const fetchCommunityData = useCallback(async () => {
@@ -119,15 +132,12 @@ export const FeedbackAndLikeSection: React.FC = () => {
   }, [user, feedbacks]);
 
   const handleToggleLike = async () => {
-    if (!user) {
-      openAuthModal("login");
-      return;
-    }
+    const currentUid = activeUserId;
 
     // Optimistic UI Update
-    const newLikes = likes.includes(user.id)
-      ? likes.filter((id) => id !== user.id)
-      : [...likes, user.id];
+    const newLikes = likes.includes(currentUid)
+      ? likes.filter((id) => id !== currentUid)
+      : [...likes, currentUid];
     setLikes(newLikes);
     localStorage.setItem(STORAGE_LIKES_KEY, JSON.stringify(newLikes));
 
@@ -138,7 +148,7 @@ export const FeedbackAndLikeSection: React.FC = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "toggle_like",
-          userId: user.id,
+          userId: currentUid,
         }),
       });
       if (res.ok) {
@@ -154,17 +164,15 @@ export const FeedbackAndLikeSection: React.FC = () => {
 
   const handleSubmitFeedback = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) {
-      openAuthModal("login");
-      return;
-    }
-
     if (!comment.trim()) return;
+
+    const reviewerName = user?.username || guestName.trim() || "Roblox Developer";
+    const currentUid = activeUserId;
 
     const newFeedback: UserFeedback = {
       id: `fb_${Date.now()}`,
-      userId: user.id,
-      username: user.username,
+      userId: currentUid,
+      username: reviewerName,
       rating,
       comment: comment.trim(),
       date: new Date().toLocaleDateString("id-ID", {
@@ -175,8 +183,8 @@ export const FeedbackAndLikeSection: React.FC = () => {
       isModerated: true,
     };
 
-    // Optimistic UI Update
-    const updated = [newFeedback, ...feedbacks.filter((f) => f.userId !== user.id)];
+    // Optimistic UI Update: langsung muncul paling atas seketika
+    const updated = [newFeedback, ...feedbacks.filter((f) => f.userId !== currentUid)];
     setFeedbacks(updated);
     localStorage.setItem(STORAGE_FEEDBACKS_KEY, JSON.stringify(updated));
 
@@ -203,7 +211,8 @@ export const FeedbackAndLikeSection: React.FC = () => {
       console.warn("Feedback sync notice:", err);
     } finally {
       setIsSyncing(false);
-      setTimeout(() => setSubmitted(false), 3000);
+      setComment("");
+      setTimeout(() => setSubmitted(false), 3500);
     }
   };
 
@@ -331,6 +340,23 @@ export const FeedbackAndLikeSection: React.FC = () => {
                 </div>
               </div>
 
+              {/* Guest Name input if not logged in */}
+              {!user && (
+                <div>
+                  <label className="text-xs text-zinc-300 block mb-1.5 font-medium">
+                    Nama Anda / Username Roblox:
+                  </label>
+                  <input
+                    type="text"
+                    value={guestName}
+                    onChange={(e) => setGuestName(e.target.value)}
+                    placeholder="Contoh: Alex_RobloxDev"
+                    className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-white/10 text-xs text-white placeholder-zinc-600 focus:border-white/40 focus:outline-none"
+                    required
+                  />
+                </div>
+              )}
+
               {/* Textarea */}
               <div>
                 <label className="text-xs text-zinc-300 block mb-1.5 font-medium">
@@ -340,36 +366,21 @@ export const FeedbackAndLikeSection: React.FC = () => {
                   rows={3}
                   value={comment}
                   onChange={(e) => setComment(e.target.value)}
-                  placeholder={
-                    user
-                      ? "Tulis pendapat Anda tentang tools atau layanan kami..."
-                      : "Silakan Masuk / Daftar akun untuk menulis review..."
-                  }
-                  disabled={!user}
+                  placeholder="Tulis pendapat atau masukan Anda tentang tools Joverse Library..."
                   required
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-white/10 text-xs text-white placeholder-zinc-600 focus:border-white/40 focus:outline-none resize-none disabled:opacity-50"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-black/50 border border-white/10 text-xs text-white placeholder-zinc-600 focus:border-white/40 focus:outline-none resize-none"
                 />
               </div>
 
               {/* Submit Button */}
-              {user ? (
-                <button
-                  type="submit"
-                  disabled={isSyncing}
-                  className="btn-white w-full py-2.5 rounded-xl text-xs font-bold text-zinc-950 flex items-center justify-center gap-2 shadow-md cursor-pointer active:scale-95 transition-all disabled:opacity-50"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  <span>{isSyncing ? "Menyimpan Ulasan..." : "Kirim Ulasan"}</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => openAuthModal("login")}
-                  className="w-full py-2.5 rounded-xl text-xs font-bold text-white bg-white/10 hover:bg-white/15 border border-white/10 flex items-center justify-center gap-2 cursor-pointer transition-all"
-                >
-                  <span>Masuk untuk Memberikan Ulasan</span>
-                </button>
-              )}
+              <button
+                type="submit"
+                disabled={isSyncing}
+                className="btn-white w-full py-2.5 rounded-xl text-xs font-bold text-zinc-950 flex items-center justify-center gap-2 shadow-md cursor-pointer active:scale-95 transition-all disabled:opacity-50"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>{isSyncing ? "Menyimpan Ulasan..." : "Kirim Ulasan & Rating"}</span>
+              </button>
 
               {submitted && (
                 <div className="p-2.5 rounded-xl bg-white/10 border border-white/20 text-xs text-white flex items-center gap-2 animate-fadeIn">

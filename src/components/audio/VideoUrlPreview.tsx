@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { AlertCircle, Play, Video, ExternalLink, X, Music } from "lucide-react";
+import { AlertCircle, Play, Video, ExternalLink, X, Music, Download } from "lucide-react";
 
 interface VideoUrlPreviewProps {
   url: string;
@@ -258,6 +258,27 @@ export const VideoUrlPreview: React.FC<VideoUrlPreviewProps> = ({
                 </a>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Download MP3 Action Button untuk YouTube */}
+        {detected.platform === "youtube" && (
+          <div className="mt-2.5 flex items-center justify-between p-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-xs">
+            <div className="flex items-center gap-2 truncate mr-2">
+              <Download className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span className="text-zinc-300 text-[11px] truncate">
+                Unduh file MP3 asli video ini untuk diproses 100% presisi:
+              </span>
+            </div>
+            <a
+              href={`https://cobalt.tools/?url=${encodeURIComponent(url)}`}
+              target="_blank"
+              rel="noreferrer"
+              className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold text-[11px] transition-all flex items-center gap-1 shadow shrink-0 cursor-pointer"
+            >
+              <span>Unduh MP3</span>
+              <ExternalLink className="w-3 h-3" />
+            </a>
           </div>
         )}
 

@@ -391,6 +391,11 @@ export const Bypass: React.FC<BypassProps> = ({ onNotify }) => {
       if (audioRef.current) {
         audioRef.current.crossOrigin = "anonymous";
         audioRef.current.src = streamUrl;
+        audioRef.current.onerror = () => {
+          if (isVideoPlatform) {
+            onNotify("YouTube membatasi streaming langsung. Gunakan tombol 'Unduh MP3' lalu upload file tersebut untuk kualitas audio 100% jernih!", "info");
+          }
+        };
         audioRef.current.load();
       }
       setIsPlaying(false);
@@ -1169,23 +1174,73 @@ sound:Play()`;
 
           {/* LUAU SCRIPT GENERATOR FOR ROBLOX STUDIO */}
           <div className="p-6 rounded-2xl bg-zinc-950/80 border border-white/10 space-y-4 shadow-xl">
-            <div className="flex items-center gap-2 pb-2 border-b border-white/5">
-              <Code2 className="w-4 h-4 text-zinc-300" />
-              <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">
-                Script Luau Roblox Studio
-              </h3>
+            <div className="flex items-center justify-between pb-3 border-b border-white/5">
+              <div className="flex items-center gap-2">
+                <Code2 className="w-4 h-4 text-zinc-300" />
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">
+                  Script Luau Roblox Studio
+                </h3>
+              </div>
+              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                Speed Matcher: {robloxSpeed}
+              </span>
             </div>
-            <p className="text-xs text-zinc-400 leading-relaxed">
-              Setelah mengunggah file hasil bypass ke Roblox Creator Dashboard, pasang script Luau berikut pada objek <strong>Sound</strong> di game Anda untuk mengembalikan tempo dan nada normal:
-            </p>
-            <div className="p-3.5 rounded-xl bg-black border border-white/10 font-mono text-xs text-zinc-300 space-y-1 relative">
-              <div className="text-emerald-400">-- Pasang di ServerScriptService / Sound</div>
+
+            {/* Penjelasan Akurat PlaybackSpeed */}
+            <div className="p-3.5 rounded-xl bg-white/[0.04] border border-white/10 text-xs text-zinc-300 space-y-2">
+              <p className="leading-relaxed">
+                <strong className="text-white">🎯 Penyesuaian PlaybackSpeed Otomatis:</strong> Karena audio di-bypass dengan kecepatan <strong className="text-white">{speedMultiplier}x</strong>, Anda wajib menyetel nilai <strong className="text-white">PlaybackSpeed = {robloxSpeed}</strong> di Roblox Studio agar saat dimainkan di dalam game, tempo dan nada lagu otomatis melambat kembali dan terdengar <strong className="text-white">100% normal seperti lagu aslinya</strong> tanpa terdeteksi moderasi hak cipta acrCloud!
+              </p>
+              <div className="text-[11px] font-mono text-zinc-400 flex items-center gap-2">
+                <span className="px-1.5 py-0.5 rounded bg-zinc-900 border border-white/10">Rumus: 1 &divide; {speedMultiplier} = {robloxSpeed}</span>
+                <span>&bull; Nada &amp; pitch kembali normal</span>
+              </div>
+            </div>
+
+            {/* Code Box */}
+            <div className="p-4 rounded-xl bg-black border border-white/10 font-mono text-xs text-zinc-300 space-y-1.5 relative group">
+              <div className="text-emerald-400">-- Pasang di ServerScriptService / Sound Object</div>
               <div>local sound = Instance.new("Sound")</div>
-              <div>sound.SoundId = "rbxassetid://YOUR_AUDIO_ID"</div>
-              <div className="text-white font-bold">sound.PlaybackSpeed = {robloxSpeed}</div>
+              <div>sound.SoundId = "rbxassetid://YOUR_AUDIO_ID" <span className="text-zinc-600">-- Ganti dengan Asset ID hasil upload Roblox</span></div>
+              <div className="text-white font-bold bg-white/10 px-2 py-0.5 rounded inline-block">
+                sound.PlaybackSpeed = {robloxSpeed} <span className="text-emerald-400 font-normal">-- Menormalkan tempo ke 1.0x</span>
+              </div>
               <div>sound.Volume = 1</div>
               <div>sound.Parent = workspace</div>
               <div>sound:Play()</div>
+
+              <div className="pt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const code = `-- Pasang di ServerScriptService / Sound\nlocal sound = Instance.new("Sound")\nsound.SoundId = "rbxassetid://YOUR_AUDIO_ID"\nsound.PlaybackSpeed = ${robloxSpeed}\nsound.Volume = 1\nsound.Parent = workspace\nsound:Play()`;
+                    navigator.clipboard.writeText(code);
+                    onNotify("Script Luau lengkap berhasil disalin ke clipboard!", "success");
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-white text-zinc-950 font-bold text-[11px] hover:bg-zinc-200 transition-all cursor-pointer shadow active:scale-95"
+                >
+                  Salin Script Lengkap
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(robloxSpeed);
+                    onNotify(`Nilai PlaybackSpeed (${robloxSpeed}) berhasil disalin!`, "info");
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white font-semibold text-[11px] border border-white/15 transition-all cursor-pointer"
+                >
+                  Salin Nilai ({robloxSpeed})
+                </button>
+              </div>
+            </div>
+
+            {/* 3 Langkah Pemasangan di Roblox Studio */}
+            <div className="space-y-1 text-[11px] text-zinc-400 pt-1 border-t border-white/5">
+              <div className="font-semibold text-zinc-300">Cara Pasang di Roblox Studio:</div>
+              <div>1. Unggah file audio hasil bypass ke <span className="text-white">create.roblox.com</span> (Dashboard).</div>
+              <div>2. Salin Asset ID audio yang berhasil diunggah.</div>
+              <div>3. Di Roblox Studio, ubah properti <span className="text-white font-mono">PlaybackSpeed</span> objek Sound menjadi <span className="text-white font-mono">{robloxSpeed}</span>.</div>
             </div>
           </div>
         </div>
