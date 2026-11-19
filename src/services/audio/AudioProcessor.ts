@@ -88,6 +88,47 @@ export class AudioProcessor {
       });
     }
 
+    // 4b. DJ Filter Sweep (-100% LPF to +100% HPF Pioneer style)
+    if (typeof settings.djFilter === "number" && settings.djFilter !== 0) {
+      const djFilterNode = offlineCtx.createBiquadFilter();
+      if (settings.djFilter < 0) {
+        // Low Pass Filter (memotong frekuensi tinggi saat diputar ke kiri)
+        djFilterNode.type = "lowpass";
+        // -100 -> ~300Hz, -1 -> ~18000Hz
+        const norm = Math.abs(settings.djFilter) / 100;
+        djFilterNode.frequency.value = Math.max(250, 18000 * Math.pow(1 - norm, 2.2));
+        djFilterNode.Q.value = 1.8 + norm * 2.0; // resonant peak
+      } else {
+        // High Pass Filter (memotong frekuensi rendah/bass saat diputar ke kanan)
+        djFilterNode.type = "highpass";
+        const norm = settings.djFilter / 100;
+        djFilterNode.frequency.value = Math.min(6000, 30 + 5500 * Math.pow(norm, 2.2));
+        djFilterNode.Q.value = 1.8 + norm * 2.0;
+      }
+      lastNode.connect(djFilterNode);
+      lastNode = djFilterNode;
+    }
+
+    // 4c. DJ 808 Sub-Bass Boost (0 .. +15 dB)
+    if (settings.djBassBoost && settings.djBassBoost > 0) {
+      const djBass = offlineCtx.createBiquadFilter();
+      djBass.type = "lowshelf";
+      djBass.frequency.value = 75;
+      djBass.gain.value = settings.djBassBoost;
+      lastNode.connect(djBass);
+      lastNode = djBass;
+    }
+
+    // 4d. DJ High Shimmer / Air Boost (0 .. +12 dB)
+    if (settings.djTrebleBoost && settings.djTrebleBoost > 0) {
+      const djHigh = offlineCtx.createBiquadFilter();
+      djHigh.type = "highshelf";
+      djHigh.frequency.value = 8500;
+      djHigh.gain.value = settings.djTrebleBoost;
+      lastNode.connect(djHigh);
+      lastNode = djHigh;
+    }
+
     // 5. Phase Inversion (Balik fase kanal R terhadap L untuk mengacaukan fingerprint stereo)
     if (settings.phaseInvert && outputChannels === 2) {
       const splitter = offlineCtx.createChannelSplitter(2);

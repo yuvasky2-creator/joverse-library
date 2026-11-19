@@ -4,7 +4,6 @@ import { UsageTracker } from "@/services/analytics/UsageTracker";
 import { AudioDecoder } from "@/services/audio/AudioDecoder";
 import { AudioExporter } from "@/services/audio/AudioExporter";
 import { AudioProcessor } from "@/services/audio/AudioProcessor";
-import { VideoUrlPreview } from "@/components/audio/VideoUrlPreview";
 import { formatDuration } from "@/lib/formatters";
 import {
   Zap,
@@ -24,11 +23,13 @@ import {
   TrendingDown,
   Download,
   Upload,
-  Link,
   Activity,
   Radio,
   AlertTriangle,
   Info,
+  Disc,
+  Flame,
+  Music,
 } from "lucide-react";
 
 interface TranscodeItem {
@@ -48,19 +49,54 @@ interface BypassProps {
   onNotify: (msg: string, type?: "success" | "error" | "info") => void;
 }
 
-const DEMO_FILE_URL = "/samples/dj-negoro-angin.mp3";
+export interface DemoAudioItem {
+  id: string;
+  title: string;
+  artist: string;
+  tag: string;
+  badge: string;
+  url: string;
+  description: string;
+}
+
+const DEMO_AUDIOS: DemoAudioItem[] = [
+  {
+    id: "fine",
+    title: "DJ I WILL BE FINE",
+    artist: "Wiro x Yogi SJ Remix",
+    tag: "Jedag-Jedug Viral",
+    badge: "TikTok Trending",
+    url: "/samples/DJ%20I%20WILL%20BE%20FINE.mp3",
+    description: "Bass jedag-jedug khas remix TikTok dengan drop punchy.",
+  },
+  {
+    id: "negoro",
+    title: "DJ NEGORO ANGIN",
+    artist: "DJ Koplo Viral",
+    tag: "Koplo Bass Boost",
+    badge: "Club Favorite",
+    url: "/samples/DJ%20NEGORO%20ANGIN.mp3",
+    description: "Koplo modern beat cepat cocok untuk testing bypass speed 2.3x.",
+  },
+  {
+    id: "xmas",
+    title: "MERRY CHRISTMAS",
+    artist: "Holiday Remix Edit",
+    tag: "Special Holiday",
+    badge: "EDM Mix",
+    url: "/samples/MERRY%20CHRISTMAS.mp3",
+    description: "Melodi pesta bertempo energik dengan spektrum frekuensi luas.",
+  },
+];
 
 export const Bypass: React.FC<BypassProps> = ({ onNotify }) => {
   const { user, quota, consumeQuota, openAuthModal } = useAuth();
 
-  // Ingest mode: File upload vs URL
-  const [inputMode, setInputMode] = useState<"upload" | "url">("upload");
-  const [audioUrlInput, setAudioUrlInput] = useState("");
+  // Ingest mode: File upload & 3 selectable demo audio tracks
   const [audioFileName, setAudioFileName] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [hasLoadedAudio, setHasLoadedAudio] = useState(false);
-  const [isLoadingUrl, setIsLoadingUrl] = useState(false);
-  const [detectedMeta, setDetectedMeta] = useState<{ title: string; author?: string; thumbnail?: string } | null>(null);
+  const [activeDemoId, setActiveDemoId] = useState<string | null>(null);
 
   // Audio Playback Elements & State for Source
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -69,6 +105,24 @@ export const Bypass: React.FC<BypassProps> = ({ onNotify }) => {
   const gainNodeRef = useRef<GainNode | null>(null);
   const bassBoostNodeRef = useRef<BiquadFilterNode | null>(null);
   const highShelfNodeRef = useRef<BiquadFilterNode | null>(null);
+  const djFilterNodeRef = useRef<BiquadFilterNode | null>(null);
+  const djBassNodeRef = useRef<BiquadFilterNode | null>(null);
+  const djTrebleNodeRef = useRef<BiquadFilterNode | null>(null);
+
+  // Bypass Engine Parameters (Micro-tuning, Speed, Phase, Noise, Sub-bass, Reverb)
+  const [speedMultiplier, setSpeedMultiplier] = useState(2.3);
+  const [pitchCents, setPitchCents] = useState(0); // -50 to +50 cents
+  const [amplifyGain, setAmplifyGain] = useState(-10); // dB
+  const [phaseInvert, setPhaseInvert] = useState(true);
+  const [stereoWidth, setStereoWidth] = useState(1.25); // 0.0 to 2.2
+  const [microNoise, setMicroNoise] = useState(3); // 0% to 10%
+  const [subBassLayer, setSubBassLayer] = useState(3); // 0% to 10%
+  const [microReverb, setMicroReverb] = useState(4); // 0% to 20%
+
+  // DJ FX Suite Parameters (Filter Sweep, Sub Punch, High Air)
+  const [djFilter, setDjFilter] = useState<number>(0); // -100% LPF to +100% HPF
+  const [djBassBoost, setDjBassBoost] = useState<number>(0); // 0 to 15 dB
+  const [djTrebleBoost, setDjTrebleBoost] = useState<number>(0); // 0 to 12 dB
 
   const initLiveDspGraph = () => {
     if (audioCtxRef.current || !audioRef.current) return;
@@ -80,28 +134,52 @@ export const Bypass: React.FC<BypassProps> = ({ onNotify }) => {
       const source = ctx.createMediaElementSource(audioRef.current);
       sourceNodeRef.current = source;
 
-      // Gain Node untuk Amplify Gain
-      const gain = ctx.createGain();
-      const linearGain = Math.pow(10, amplifyGain / 20);
-      gain.gain.value = linearGain;
-      gainNodeRef.current = gain;
+      // DJ Filter Sweep Node (Pioneer Style)
+      const djFilterNode = ctx.createBiquadFilter();
+      djFilterNode.type = "allpass";
+      djFilterNode.frequency.value = 1000;
+      djFilterNodeRef.current = djFilterNode;
 
-      // Bass Boost untuk Sub-bass Layer
+      // DJ 808 Sub-Bass Node
+      const djBass = ctx.createBiquadFilter();
+      djBass.type = "lowshelf";
+      djBass.frequency.value = 75;
+      djBass.gain.value = djBassBoost;
+      djBassNodeRef.current = djBass;
+
+      // Sub-bass Layer Node
       const bass = ctx.createBiquadFilter();
       bass.type = "lowshelf";
       bass.frequency.value = 85;
       bass.gain.value = subBassLayer * 1.5;
       bassBoostNodeRef.current = bass;
 
-      // High Shelf untuk Texture & Noise Shimmer
+      // DJ High Air Node
+      const djTreble = ctx.createBiquadFilter();
+      djTreble.type = "highshelf";
+      djTreble.frequency.value = 8500;
+      djTreble.gain.value = djTrebleBoost;
+      djTrebleNodeRef.current = djTreble;
+
+      // High Shelf Shimmer Node
       const high = ctx.createBiquadFilter();
       high.type = "highshelf";
       high.frequency.value = 6000;
       high.gain.value = microNoise * 0.8;
       highShelfNodeRef.current = high;
 
-      source.connect(bass);
-      bass.connect(high);
+      // Gain Node untuk Amplify Gain
+      const gain = ctx.createGain();
+      const linearGain = Math.pow(10, amplifyGain / 20);
+      gain.gain.value = linearGain;
+      gainNodeRef.current = gain;
+
+      // Chain: source -> djFilter -> djBass -> bass -> djTreble -> high -> gain -> destination
+      source.connect(djFilterNode);
+      djFilterNode.connect(djBass);
+      djBass.connect(bass);
+      bass.connect(djTreble);
+      djTreble.connect(high);
       high.connect(gain);
       gain.connect(ctx.destination);
     } catch (err) {
@@ -117,16 +195,6 @@ export const Bypass: React.FC<BypassProps> = ({ onNotify }) => {
 
   // A/B Testing Mode: 'bypassed' (preview DSP speed/pitch) vs 'original' (pure raw)
   const [abTestMode, setAbTestMode] = useState<"bypassed" | "original">("bypassed");
-
-  // Bypass Engine Parameters (Micro-tuning, Speed, Phase, Noise, Sub-bass, Reverb)
-  const [speedMultiplier, setSpeedMultiplier] = useState(2.3);
-  const [pitchCents, setPitchCents] = useState(0); // -50 to +50 cents
-  const [amplifyGain, setAmplifyGain] = useState(-10); // dB
-  const [phaseInvert, setPhaseInvert] = useState(true);
-  const [stereoWidth, setStereoWidth] = useState(1.15); // 0.0 to 2.0
-  const [microNoise, setMicroNoise] = useState(3); // 0% to 10%
-  const [subBassLayer, setSubBassLayer] = useState(2); // 0% to 10%
-  const [microReverb, setMicroReverb] = useState(4); // 0% to 20%
 
   // Preset selector
   const [activePreset, setActivePreset] = useState<"light" | "medium" | "aggressive" | "custom">("aggressive");
@@ -165,7 +233,7 @@ export const Bypass: React.FC<BypassProps> = ({ onNotify }) => {
   // Roblox Studio Limit Checks
   const robloxLimits = AudioProcessor.checkRobloxLimits(duration, estimatedSizeBytes);
 
-  // Sinkronisasi Real-Time DSP Parameters (Speed, Gain, Bass, Noise) saat slider digeser / A-B testing
+  // Sinkronisasi Real-Time DSP Parameters (Speed, Gain, Bass, Noise, DJ Filter & FX) saat slider digeser
   useEffect(() => {
     if (audioRef.current) {
       if (abTestMode === "bypassed") {
@@ -180,6 +248,32 @@ export const Bypass: React.FC<BypassProps> = ({ onNotify }) => {
         if (highShelfNodeRef.current && audioCtxRef.current) {
           highShelfNodeRef.current.gain.setTargetAtTime(microNoise * 0.8, audioCtxRef.current.currentTime, 0.04);
         }
+        // DJ Filter Sweep Live
+        if (djFilterNodeRef.current && audioCtxRef.current) {
+          if (djFilter === 0) {
+            djFilterNodeRef.current.type = "allpass";
+          } else if (djFilter < 0) {
+            djFilterNodeRef.current.type = "lowpass";
+            const norm = Math.abs(djFilter) / 100;
+            const freq = Math.max(250, 18000 * Math.pow(1 - norm, 2.2));
+            djFilterNodeRef.current.frequency.setTargetAtTime(freq, audioCtxRef.current.currentTime, 0.03);
+            djFilterNodeRef.current.Q.setTargetAtTime(1.8 + norm * 2.0, audioCtxRef.current.currentTime, 0.03);
+          } else {
+            djFilterNodeRef.current.type = "highpass";
+            const norm = djFilter / 100;
+            const freq = Math.min(6000, 30 + 5500 * Math.pow(norm, 2.2));
+            djFilterNodeRef.current.frequency.setTargetAtTime(freq, audioCtxRef.current.currentTime, 0.03);
+            djFilterNodeRef.current.Q.setTargetAtTime(1.8 + norm * 2.0, audioCtxRef.current.currentTime, 0.03);
+          }
+        }
+        // DJ 808 Bass Boost Live
+        if (djBassNodeRef.current && audioCtxRef.current) {
+          djBassNodeRef.current.gain.setTargetAtTime(djBassBoost, audioCtxRef.current.currentTime, 0.03);
+        }
+        // DJ Treble Air Live
+        if (djTrebleNodeRef.current && audioCtxRef.current) {
+          djTrebleNodeRef.current.gain.setTargetAtTime(djTrebleBoost, audioCtxRef.current.currentTime, 0.03);
+        }
       } else {
         audioRef.current.playbackRate = 1.0;
         if (gainNodeRef.current && audioCtxRef.current) {
@@ -191,9 +285,18 @@ export const Bypass: React.FC<BypassProps> = ({ onNotify }) => {
         if (highShelfNodeRef.current && audioCtxRef.current) {
           highShelfNodeRef.current.gain.setTargetAtTime(0, audioCtxRef.current.currentTime, 0.04);
         }
+        if (djFilterNodeRef.current && audioCtxRef.current) {
+          djFilterNodeRef.current.type = "allpass";
+        }
+        if (djBassNodeRef.current && audioCtxRef.current) {
+          djBassNodeRef.current.gain.setTargetAtTime(0, audioCtxRef.current.currentTime, 0.03);
+        }
+        if (djTrebleNodeRef.current && audioCtxRef.current) {
+          djTrebleNodeRef.current.gain.setTargetAtTime(0, audioCtxRef.current.currentTime, 0.03);
+        }
       }
     }
-  }, [abTestMode, speedMultiplier, amplifyGain, subBassLayer, microNoise]);
+  }, [abTestMode, speedMultiplier, amplifyGain, subBassLayer, microNoise, djFilter, djBassBoost, djTrebleBoost]);
 
   // Audio event listeners for source audio
   const handleLoadedMetadata = () => {
@@ -323,20 +426,64 @@ export const Bypass: React.FC<BypassProps> = ({ onNotify }) => {
     }
   };
 
-  // Load Demo Audio
-  const handleLoadDemo = () => {
-    setAudioFileName("DJ NEGORO ANGIN.mp3");
+  // DJ Special FX Presets
+  const applyDjPreset = (presetName: "club" | "pioneer" | "lofi" | "extreme") => {
+    setActivePreset("custom");
+    if (presetName === "club") {
+      setSpeedMultiplier(2.3);
+      setDjBassBoost(12);
+      setDjTrebleBoost(6);
+      setDjFilter(0);
+      setStereoWidth(1.6);
+      setSubBassLayer(4);
+      setPhaseInvert(true);
+      onNotify("Preset DJ 'Club Jedag-Jedug Drop' aktif! 808 Sub-bass punch + Shimmer + 2.3x Bypass.", "success");
+    } else if (presetName === "pioneer") {
+      setSpeedMultiplier(2.3);
+      setDjFilter(70);
+      setDjBassBoost(0);
+      setDjTrebleBoost(8);
+      setStereoWidth(1.8);
+      setPhaseInvert(true);
+      onNotify("Preset DJ 'Pioneer Filter Build-Up' aktif! HPF +70% memotong bass untuk build-up.", "info");
+    } else if (presetName === "lofi") {
+      setSpeedMultiplier(2.3);
+      setDjFilter(-55);
+      setDjBassBoost(6);
+      setDjTrebleBoost(0);
+      setStereoWidth(1.1);
+      setMicroNoise(5);
+      onNotify("Preset DJ 'Underground Lo-Fi Drop' aktif! LPF -55% suara hangat teredam.", "info");
+    } else if (presetName === "extreme") {
+      setSpeedMultiplier(2.3);
+      setPitchCents(45);
+      setAmplifyGain(-10);
+      setPhaseInvert(true);
+      setStereoWidth(1.4);
+      setMicroNoise(6);
+      setSubBassLayer(4);
+      setDjFilter(0);
+      setDjBassBoost(5);
+      setDjTrebleBoost(4);
+      onNotify("Preset 'Extreme Roblox Bypass' aktif: 2.3x Speed + Dual Hash Scrambler.", "success");
+    }
+  };
+
+  // 1-Click Load from 3 Selectable Demo Audio Tracks
+  const handleLoadDemoTrack = (demo: DemoAudioItem) => {
+    setActiveDemoId(demo.id);
+    setAudioFileName(`${demo.title}.mp3`);
     setSelectedFile(null);
-    setSourceAudioUrl(DEMO_FILE_URL);
+    setSourceAudioUrl(demo.url);
     if (audioRef.current) {
-      audioRef.current.src = DEMO_FILE_URL;
+      audioRef.current.src = demo.url;
       audioRef.current.load();
     }
     setDuration(0);
     setCurrentTime(0);
     setIsPlaying(false);
     setHasLoadedAudio(true);
-    onNotify("Demo Audio 'DJ NEGORO ANGIN' siap diputar & di-bypass!", "success");
+    onNotify(`Demo Audio "${demo.title}" berhasil dimuat! Siap di-play & di-bypass.`, "success");
   };
 
   // File Upload
@@ -344,6 +491,7 @@ export const Bypass: React.FC<BypassProps> = ({ onNotify }) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       setSelectedFile(file);
+      setActiveDemoId(null);
       setAudioFileName(file.name);
       const url = URL.createObjectURL(file);
       setSourceAudioUrl(url);
@@ -355,64 +503,6 @@ export const Bypass: React.FC<BypassProps> = ({ onNotify }) => {
       setCurrentTime(0);
       setHasLoadedAudio(true);
       onNotify(`File "${file.name}" siap diproses!`, "success");
-    }
-  };
-
-  // URL Ingest Parser (YouTube, TikTok, Direct MP3/WAV/OGG)
-  const handleLoadFromUrl = async (overrideUrl?: string) => {
-    const rawUrl = (overrideUrl || audioUrlInput).trim();
-    if (!rawUrl) {
-      onNotify("Silakan masukkan link URL terlebih dahulu!", "error");
-      return;
-    }
-
-    setIsLoadingUrl(true);
-    try {
-      const isDirectAudio = /\.(mp3|wav|ogg|flac|m4a|aac)(\?.*)?$/i.test(rawUrl);
-      const isVideoPlatform = /(?:youtu\.be|youtube\.com|tiktok\.com)/i.test(rawUrl);
-
-      // Gunakan proxy stream audio asli untuk YouTube atau direct audio URL
-      const streamUrl = rawUrl.startsWith("http") && !rawUrl.includes(window.location.hostname)
-        ? `/api/fetch-audio?url=${encodeURIComponent(rawUrl)}`
-        : rawUrl;
-
-      const rawGuess = rawUrl.split("/").pop()?.split("?")[0] || "Stream_Audio_Bypass.mp3";
-      const titleToUse = detectedMeta?.title
-        ? `${detectedMeta.title}.mp3`
-        : isVideoPlatform
-        ? "YouTube_Stream_Audio.mp3"
-        : rawGuess;
-
-      setSourceAudioUrl(streamUrl);
-      setAudioFileName(titleToUse);
-      setSelectedFile(null);
-      setHasLoadedAudio(true);
-
-      if (audioRef.current) {
-        audioRef.current.crossOrigin = "anonymous";
-        audioRef.current.src = streamUrl;
-        audioRef.current.onerror = () => {
-          if (isVideoPlatform) {
-            onNotify("YouTube membatasi streaming langsung. Gunakan tombol 'Unduh MP3' lalu upload file tersebut untuk kualitas audio 100% jernih!", "info");
-          }
-        };
-        audioRef.current.load();
-      }
-      setIsPlaying(false);
-      setCurrentTime(0);
-
-      if (isVideoPlatform) {
-        onNotify(`Audio "${titleToUse.replace(/\.mp3$/, '')}" berhasil dimuat ke workstation!`, "success");
-      } else if (isDirectAudio) {
-        onNotify("Direct Audio URL berhasil diekstrak & dihubungkan ke Bypass Engine!", "success");
-      } else {
-        onNotify("Link media terhubung! Stream audio di-proxy bebas CORS.", "info");
-      }
-    } catch (err: any) {
-      console.error("URL load error:", err);
-      onNotify("Gagal memuat link audio. Pastikan URL publik dapat diakses.", "error");
-    } finally {
-      setIsLoadingUrl(false);
     }
   };
 
@@ -473,6 +563,9 @@ export const Bypass: React.FC<BypassProps> = ({ onNotify }) => {
           microNoise,
           subBassLayer,
           microReverb,
+          djFilter,
+          djBassBoost,
+          djTrebleBoost,
         },
         {
           format: targetFormat.toLowerCase() as "ogg" | "mp3" | "wav",
@@ -564,13 +657,13 @@ sound:Play()`;
         <div>
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/[0.06] border border-white/10 text-xs font-semibold text-zinc-300 font-mono mb-3">
             <Zap className="w-3.5 h-3.5 text-white" />
-            <span>ROBLOX AUDIO BYPASS SUITE &middot; SAFE LUAU DSP</span>
+            <span>ROBLOX AUDIO BYPASS SUITE &middot; DJ FX &amp; SAFE LUAU DSP</span>
           </div>
           <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight font-['Sora']">
-            Roblox Audio Bypass &amp; Transcoder
+            Roblox Audio Bypass &amp; DJ Master Suite
           </h1>
           <p className="text-sm text-zinc-400 mt-2 max-w-2xl leading-relaxed">
-            Algoritma proteksi audio Roblox Studio dengan Speed Scaling, Micro-Tuning Pitch Shifter, Phase Inversion, dan Noise Layering untuk melewati sistem moderasi otomatis Roblox.
+            Algoritma proteksi audio Roblox Studio dengan Speed Scaling (2.3x), DJ Pioneer Filter Sweep, 808 Sub-Bass Punch, Phase Inversion, dan Noise Layering untuk melewati sistem moderasi otomatis Roblox.
           </p>
         </div>
 
@@ -602,135 +695,82 @@ sound:Play()`;
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* LEFT COLUMN: AUDIO INGEST & SETTINGS (7 COLS) */}
         <div className="lg:col-span-7 space-y-6">
-          {/* STEP 1: INGEST CARD */}
-          <div className="p-6 rounded-2xl bg-zinc-950/80 border border-white/10 space-y-4 shadow-xl">
+          {/* STEP 1: INGEST CARD (FILE UPLOAD & 3 DEMO AUDIO TRACKS) */}
+          <div className="p-6 rounded-2xl bg-zinc-950/80 border border-white/10 space-y-5 shadow-xl">
             <div className="flex items-center justify-between pb-3 border-b border-white/5">
               <h2 className="text-xs font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
                 <Upload className="w-4 h-4 text-zinc-300" />
-                <span>Sumber Audio (Audio Ingest)</span>
+                <span>Sumber Audio (File Komputer / 3 Demo Audio)</span>
               </h2>
               <span className="text-[10px] font-mono text-zinc-500">
                 Format: MP3 &middot; WAV &middot; OGG &middot; FLAC
               </span>
             </div>
 
-            {/* Ingest Tabs */}
-            <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-zinc-900 border border-white/5">
-              <button
-                type="button"
-                onClick={() => setInputMode("upload")}
-                className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                  inputMode === "upload"
-                    ? "bg-white/15 text-white border border-white/25 shadow-sm"
-                    : "text-zinc-400 hover:text-white"
-                }`}
-              >
-                <Upload className="w-3.5 h-3.5" />
-                <span>Upload File Komputer</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setInputMode("url")}
-                className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                  inputMode === "url"
-                    ? "bg-white/15 text-white border border-white/25 shadow-sm"
-                    : "text-zinc-400 hover:text-white"
-                }`}
-              >
-                <Link className="w-3.5 h-3.5" />
-                <span>URL Audio Direct</span>
-              </button>
-            </div>
-
-            {/* Input Box */}
-            {inputMode === "upload" ? (
-              <label className="flex flex-col items-center justify-center gap-3 p-8 rounded-xl border-2 border-dashed border-white/15 bg-zinc-900/40 hover:bg-zinc-900/70 hover:border-white/30 transition-all cursor-pointer text-center">
-                <input
-                  type="file"
-                  accept="audio/*"
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
-                <div className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-zinc-300">
-                  <Upload className="w-6 h-6" />
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-white">
-                    {selectedFile ? selectedFile.name : "Pilih atau Seret File Audio ke Sini"}
-                  </p>
-                  <p className="text-xs text-zinc-500 mt-1">
-                    Mendukung MP3, WAV, OGG, FLAC &middot; Maksimal 100 MB &middot; Diproses 100% lokal di browser
-                  </p>
-                </div>
-              </label>
-            ) : (
-              <div className="space-y-3">
-                <label className="text-xs font-semibold text-zinc-300 block">
-                  URL Video YouTube / TikTok / Direct Audio (MP3/WAV/OGG):
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="url"
-                    value={audioUrlInput}
-                    onChange={(e) => setAudioUrlInput(e.target.value)}
-                    placeholder="Paste link YouTube, TikTok, atau link file audio (.mp3, .wav)..."
-                    className="relative z-20 pointer-events-auto select-text flex-1 px-3.5 py-2.5 rounded-xl bg-zinc-900 border border-white/10 text-xs text-white placeholder-zinc-500 focus:border-white/40 focus:outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => handleLoadFromUrl()}
-                    disabled={isLoadingUrl}
-                    className="px-4 py-2 bg-white text-zinc-950 font-bold text-xs rounded-xl cursor-pointer hover:bg-zinc-200 transition-all shadow-md active:scale-95 shrink-0 disabled:opacity-50"
-                  >
-                    {isLoadingUrl ? "Memuat..." : "Muat Audio"}
-                  </button>
-                </div>
-
-                {audioUrlInput && (
-                  <div className="space-y-2 pt-2">
-                    <VideoUrlPreview
-                      url={audioUrlInput}
-                      onClear={() => {
-                        setAudioUrlInput("");
-                        setDetectedMeta(null);
-                      }}
-                      onNotify={onNotify}
-                      onMetaLoaded={(meta) => {
-                        setDetectedMeta(meta);
-                        if (meta.title) {
-                          setAudioFileName(`${meta.title}.mp3`);
-                        }
-                      }}
-                    />
-                    <div className="flex items-center justify-between p-3 rounded-xl bg-white/[0.04] border border-white/10 text-xs">
-                      <span className="text-zinc-300">
-                        Ekstrak stream audio dari link ini untuk di-bypass?
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleLoadFromUrl(audioUrlInput)}
-                        className="px-3 py-1.5 rounded-lg bg-white text-zinc-950 font-bold text-[11px] hover:bg-zinc-200 transition-all cursor-pointer shadow"
-                      >
-                        Gunakan Audio Ini
-                      </button>
-                    </div>
-                  </div>
-                )}
+            {/* File Upload Dropzone */}
+            <label className="flex flex-col items-center justify-center gap-3 p-7 rounded-xl border-2 border-dashed border-white/15 bg-zinc-900/40 hover:bg-zinc-900/70 hover:border-white/30 transition-all cursor-pointer text-center">
+              <input
+                type="file"
+                accept="audio/*"
+                onChange={handleFileChange}
+                className="hidden"
+              />
+              <div className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-zinc-300">
+                <Upload className="w-6 h-6" />
               </div>
-            )}
+              <div>
+                <p className="text-sm font-bold text-white">
+                  {selectedFile ? selectedFile.name : "Pilih atau Seret File Audio ke Sini"}
+                </p>
+                <p className="text-xs text-zinc-500 mt-1">
+                  Mendukung MP3, WAV, OGG, FLAC &middot; Maksimal 100 MB &middot; 100% diproses lokal di browser
+                </p>
+              </div>
+            </label>
 
-            {/* Quick Demo Trigger */}
-            <div className="pt-2 flex items-center justify-between text-xs text-zinc-400">
-              <span>Ingin mencoba audio sampel DJ NEGORO ANGIN?</span>
-              <button
-                type="button"
-                onClick={handleLoadDemo}
-                className="text-white font-bold hover:underline cursor-pointer flex items-center gap-1 font-mono"
-              >
-                <span>Coba Audio Demo</span>
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
+            {/* 3 Selectable Demo Audio Tracks */}
+            <div className="space-y-2.5 pt-2 border-t border-white/5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-zinc-300 flex items-center gap-1.5 font-mono">
+                  <Music className="w-3.5 h-3.5 text-zinc-400" />
+                  <span>Atau Coba 3 Audio Demo Populer:</span>
+                </span>
+                <span className="text-[11px] text-zinc-500 font-mono">1-Klik Muat</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                {DEMO_AUDIOS.map((demo) => {
+                  const isSelected = activeDemoId === demo.id && !selectedFile;
+                  return (
+                    <button
+                      key={demo.id}
+                      type="button"
+                      onClick={() => handleLoadDemoTrack(demo)}
+                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer relative overflow-hidden group ${
+                        isSelected
+                          ? "bg-white/15 border-white text-white shadow-lg ring-1 ring-white/30"
+                          : "bg-zinc-900/70 border-white/10 text-zinc-300 hover:border-white/30 hover:bg-zinc-900"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="px-2 py-0.5 rounded bg-white/10 text-[9px] font-mono font-bold text-zinc-300 border border-white/10">
+                          {demo.badge}
+                        </span>
+                        <Disc className={`w-3.5 h-3.5 ${isSelected ? "text-white animate-spin" : "text-zinc-500 group-hover:text-white"}`} />
+                      </div>
+                      <div className="text-xs font-bold text-white truncate font-['Sora']">
+                        {demo.title}
+                      </div>
+                      <div className="text-[10px] text-zinc-400 truncate mt-0.5">
+                        {demo.artist}
+                      </div>
+                      <div className="text-[9px] text-zinc-500 mt-1 line-clamp-1">
+                        {demo.tag}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
@@ -738,13 +778,13 @@ sound:Play()`;
           {hasLoadedAudio && (
             <div className="p-6 rounded-2xl bg-zinc-950/80 border border-white/10 space-y-4 shadow-xl">
               <div className="flex items-center justify-between pb-3 border-b border-white/5">
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <div className="flex items-center gap-2 truncate">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
                   <span className="text-xs font-bold text-white font-mono truncate max-w-xs">
-                    {audioFileName || "Preview Audio Sumber"}
+                    {audioFileName || "Preview Audio"}
                   </span>
                 </div>
-                <div className="text-xs font-mono text-zinc-400">
+                <div className="text-xs font-mono text-zinc-400 shrink-0">
                   {formatDuration(currentTime)} / {formatDuration(duration)}
                 </div>
               </div>
@@ -815,75 +855,153 @@ sound:Play()`;
             </div>
           )}
 
-          {/* STEP 3: 1-KLIK PRESET BYPASS */}
+          {/* STEP 3: PRESET 1-KLIK & DJ SPECIAL FX */}
           <div className="p-6 rounded-2xl bg-zinc-950/80 border border-white/10 space-y-4 shadow-xl">
             <div className="flex items-center justify-between pb-2 border-b border-white/5">
               <h2 className="text-xs font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-zinc-300" />
-                <span>Preset 1-Klik Moderasi Roblox</span>
+                <Flame className="w-4 h-4 text-amber-400" />
+                <span>Preset DJ &amp; Moderasi Roblox</span>
               </h2>
-              <span className="text-[10px] font-mono text-zinc-500">Tingkat Proteksi</span>
+              <span className="text-[10px] font-mono text-zinc-500">1-Klik Eksekusi</span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
               <button
                 type="button"
-                onClick={() => applyPreset("light")}
-                className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
-                  activePreset === "light"
-                    ? "bg-white/15 border-white text-white shadow-lg"
-                    : "bg-zinc-900/60 border-white/5 text-zinc-400 hover:border-white/20"
-                }`}
+                onClick={() => applyDjPreset("club")}
+                className="p-3 rounded-xl border border-white/10 bg-zinc-900/60 hover:bg-zinc-900 hover:border-white/30 text-left transition-all cursor-pointer group"
               >
-                <div className="font-bold text-xs text-white">Light Bypass</div>
-                <div className="text-[11px] text-zinc-400 mt-1">Aman &amp; Jernih (1.04x, +15c)</div>
-                <div className="text-[10px] text-zinc-500 mt-0.5">Untuk vokal &amp; lagu santai</div>
+                <div className="flex items-center gap-1.5 font-bold text-xs text-white">
+                  <span>🎧 Club Drop</span>
+                </div>
+                <div className="text-[10px] text-zinc-400 mt-1">Sub-Bass 808 + Shimmer + 2.3x</div>
               </button>
 
               <button
                 type="button"
-                onClick={() => applyPreset("medium")}
-                className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
-                  activePreset === "medium"
-                    ? "bg-white/15 border-white text-white shadow-lg"
-                    : "bg-zinc-900/60 border-white/5 text-zinc-400 hover:border-white/20"
-                }`}
+                onClick={() => applyDjPreset("pioneer")}
+                className="p-3 rounded-xl border border-white/10 bg-zinc-900/60 hover:bg-zinc-900 hover:border-white/30 text-left transition-all cursor-pointer group"
               >
-                <div className="font-bold text-xs text-white">Medium Bypass</div>
-                <div className="text-[11px] text-zinc-400 mt-1">Balanced Mod (1.12x, Phase Inv)</div>
-                <div className="text-[10px] text-zinc-500 mt-0.5">BGM map umum &amp; SFX</div>
+                <div className="flex items-center gap-1.5 font-bold text-xs text-white">
+                  <span>🎛️ Filter Build</span>
+                </div>
+                <div className="text-[10px] text-zinc-400 mt-1">HPF +70% Sweep + Wide</div>
               </button>
 
               <button
                 type="button"
-                onClick={() => applyPreset("aggressive")}
-                className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
-                  activePreset === "aggressive"
-                    ? "bg-white/15 border-white text-white shadow-lg"
-                    : "bg-zinc-900/60 border-white/5 text-zinc-400 hover:border-white/20"
-                }`}
+                onClick={() => applyDjPreset("lofi")}
+                className="p-3 rounded-xl border border-white/10 bg-zinc-900/60 hover:bg-zinc-900 hover:border-white/30 text-left transition-all cursor-pointer group"
               >
-                <div className="font-bold text-xs text-white">Aggressive Bypass</div>
-                <div className="text-[11px] text-zinc-400 mt-1">2.3x Speed Scaling &amp; Noise</div>
-                <div className="text-[10px] text-zinc-500 mt-0.5">Maksimum lolos copyright</div>
+                <div className="flex items-center gap-1.5 font-bold text-xs text-white">
+                  <span>📻 Lo-Fi Muffled</span>
+                </div>
+                <div className="text-[10px] text-zinc-400 mt-1">LPF -55% Underground Sound</div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => applyDjPreset("extreme")}
+                className="p-3 rounded-xl border border-white/10 bg-zinc-900/60 hover:bg-zinc-900 hover:border-white/30 text-left transition-all cursor-pointer group"
+              >
+                <div className="flex items-center gap-1.5 font-bold text-xs text-white">
+                  <span>🚀 2.3x Bypass</span>
+                </div>
+                <div className="text-[10px] text-zinc-400 mt-1">Dual Hash Scrambler Roblox</div>
               </button>
             </div>
           </div>
 
-          {/* STEP 4: BYPASS DSP CONTROLS (DETAILED SLIDERS) */}
+          {/* STEP 4: DJ SUITE & REAL-TIME CONTROLS */}
           <div className="p-6 rounded-2xl bg-zinc-950/80 border border-white/10 space-y-5 shadow-xl">
             <div className="flex items-center justify-between pb-3 border-b border-white/5">
               <h2 className="text-xs font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
                 <Sliders className="w-4 h-4 text-zinc-300" />
-                <span>Parameter Mesin Bypass (Micro-Tuning DSP)</span>
+                <span>DJ FX Suite &amp; Live Filter Sweep</span>
               </h2>
               <span className="text-[10px] font-mono text-zinc-400">
-                Roblox PlaybackSpeed: <strong className="text-white">{robloxSpeed}</strong>
+                Respon Langsung Saat Audio Berputar
               </span>
             </div>
 
+            {/* DJ Filter Sweep (-100% LPF to +100% HPF) */}
+            <div className="space-y-1.5 p-3.5 rounded-xl bg-zinc-900/80 border border-white/10">
+              <div className="flex justify-between text-xs font-mono">
+                <span className="text-zinc-200 font-bold flex items-center gap-1.5">
+                  <Disc className="w-3.5 h-3.5 text-zinc-400" />
+                  <span>DJ Color Filter Sweep (Pioneer Style):</span>
+                </span>
+                <span className="text-white font-bold">
+                  {djFilter === 0
+                    ? "Flat / Netral"
+                    : djFilter < 0
+                    ? `LPF (Low-Pass) ${djFilter}%`
+                    : `HPF (High-Pass) +${djFilter}%`}
+                </span>
+              </div>
+              <input
+                type="range"
+                min="-100"
+                max="100"
+                step="1"
+                value={djFilter}
+                onChange={(e) => setDjFilter(parseInt(e.target.value))}
+                className="w-full h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-white"
+              />
+              <div className="flex justify-between text-[10px] font-mono text-zinc-500">
+                <span>◀ Low Pass (Redam Treble)</span>
+                <span>0 (Netral)</span>
+                <span>High Pass (Potong Bass) ▶</span>
+              </div>
+            </div>
+
+            {/* DJ 808 Sub-Bass & High Shimmer */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5 p-3.5 rounded-xl bg-zinc-900/80 border border-white/10">
+                <div className="flex justify-between text-xs font-mono">
+                  <span className="text-zinc-300">808 Sub-Bass Punch:</span>
+                  <span className="text-white font-bold">+{djBassBoost} dB</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="15"
+                  step="0.5"
+                  value={djBassBoost}
+                  onChange={(e) => setDjBassBoost(parseFloat(e.target.value))}
+                  className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-white"
+                />
+                <div className="flex justify-between text-[10px] font-mono text-zinc-500">
+                  <span>0 dB</span>
+                  <span>+6 dB</span>
+                  <span>+15 dB (Deep Punch)</span>
+                </div>
+              </div>
+
+              <div className="space-y-1.5 p-3.5 rounded-xl bg-zinc-900/80 border border-white/10">
+                <div className="flex justify-between text-xs font-mono">
+                  <span className="text-zinc-300">High Crisp / Shimmer:</span>
+                  <span className="text-white font-bold">+{djTrebleBoost} dB</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="12"
+                  step="0.5"
+                  value={djTrebleBoost}
+                  onChange={(e) => setDjTrebleBoost(parseFloat(e.target.value))}
+                  className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-white"
+                />
+                <div className="flex justify-between text-[10px] font-mono text-zinc-500">
+                  <span>0 dB</span>
+                  <span>+6 dB</span>
+                  <span>+12 dB (Sizzle)</span>
+                </div>
+              </div>
+            </div>
+
             {/* Slider 1: Speed Scaling */}
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 pt-2 border-t border-white/5">
               <div className="flex justify-between text-xs font-mono">
                 <span className="text-zinc-300">Kecepatan Bypass (Speed Scaling):</span>
                 <span className="text-white font-bold">{speedMultiplier.toFixed(2)}x</span>
@@ -901,7 +1019,7 @@ sound:Play()`;
                 className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-white"
               />
               <div className="flex justify-between text-[10px] font-mono text-zinc-500">
-                <span>0.90x (Subtle)</span>
+                <span>0.90x</span>
                 <span>1.04x</span>
                 <span>1.80x</span>
                 <span>2.30x (Standar Roblox)</span>
@@ -909,7 +1027,7 @@ sound:Play()`;
               </div>
             </div>
 
-            {/* Slider 2: Micro-tuning Pitch Shifter (-50 to +50 cents) */}
+            {/* Slider 2: Micro-tuning Pitch Shifter */}
             <div className="space-y-1.5">
               <div className="flex justify-between text-xs font-mono">
                 <span className="text-zinc-300">Pitch Shifter (Micro-Tuning):</span>
@@ -962,7 +1080,7 @@ sound:Play()`;
               </div>
             </div>
 
-            {/* Advanced Grid: Phase Invert, Noise, Sub-Bass, Reverb */}
+            {/* Advanced Grid: Phase Invert, Noise, Sub-Bass, Stereo Width */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-white/5">
               {/* Phase Invert Toggle */}
               <div className="p-3.5 rounded-xl bg-zinc-900 border border-white/5 space-y-2">
@@ -983,54 +1101,18 @@ sound:Play()`;
               {/* Stereo Width */}
               <div className="p-3.5 rounded-xl bg-zinc-900 border border-white/5 space-y-2">
                 <div className="flex items-center justify-between text-xs font-bold text-white">
-                  <span>Stereo Widener</span>
+                  <span>Stereo Club Widener</span>
                   <span className="text-zinc-400 font-mono">{(stereoWidth * 100).toFixed(0)}%</span>
                 </div>
                 <input
                   type="range"
                   min="0.5"
-                  max="1.8"
+                  max="2.2"
                   step="0.05"
                   value={stereoWidth}
                   onChange={(e) => setStereoWidth(parseFloat(e.target.value))}
                   className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-white"
                 />
-              </div>
-
-              {/* Micro-Noise Layering */}
-              <div className="p-3.5 rounded-xl bg-zinc-900 border border-white/5 space-y-2">
-                <div className="flex items-center justify-between text-xs font-bold text-white">
-                  <span>Micro-Noise Injection</span>
-                  <span className="text-zinc-400 font-mono">{microNoise}%</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="10"
-                  step="1"
-                  value={microNoise}
-                  onChange={(e) => setMicroNoise(parseInt(e.target.value))}
-                  className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-white"
-                />
-                <p className="text-[9px] text-zinc-500">Injeksi desah halus untuk mengacak fingerprint MD5.</p>
-              </div>
-
-              {/* Sub-Bass Layering */}
-              <div className="p-3.5 rounded-xl bg-zinc-900 border border-white/5 space-y-2">
-                <div className="flex items-center justify-between text-xs font-bold text-white">
-                  <span>50Hz Sub-Bass Layer</span>
-                  <span className="text-zinc-400 font-mono">{subBassLayer}%</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="10"
-                  step="1"
-                  value={subBassLayer}
-                  onChange={(e) => setSubBassLayer(parseInt(e.target.value))}
-                  className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-white"
-                />
-                <p className="text-[9px] text-zinc-500">Harmonik frekuensi rendah untuk mengubah spektrum FFT.</p>
               </div>
             </div>
           </div>

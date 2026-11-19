@@ -29,7 +29,7 @@ export interface ProcessingSettings {
     targetDb: number;         // 0, -1, -3, -6 dB
   };
   channelMode: 'original' | 'mono' | 'stereo';
-  // Fitur Bypass Lanjutan untuk Roblox Studio
+  // Fitur Bypass & DJ Suite Lanjutan untuk Roblox Studio
   phaseInvert?: boolean;      // Balik fase kanal L/R
   stereoWidth?: number;      // 0.0 (mono) to 2.0 (super-wide)
   microNoise?: number;       // 0 to 10 (%) noise layering pengacak fingerprint
@@ -37,6 +37,9 @@ export interface ProcessingSettings {
   microReverb?: number;      // 0 to 20 (%) micro-reverb ekor spektrum
   seamlessLoop?: boolean;    // Optimasi loop mulus tanpa klik untuk Roblox BGM
   eqGains?: number[];        // 9-band EQ gains [-12dB .. +12dB]
+  djFilter?: number;         // -100% (Low Pass) s/d +100% (High Pass) Pioneer DJ style
+  djBassBoost?: number;      // 0 s/d +15 dB (808 Sub Punch)
+  djTrebleBoost?: number;    // 0 s/d +12 dB (High Shimmer/Air)
 }
 
 export interface ExportSettings {

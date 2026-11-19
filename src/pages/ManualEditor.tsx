@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { VideoUrlPreview } from "@/components/audio/VideoUrlPreview";
 import { WaveformCanvas } from "@/components/audio/WaveformCanvas";
 import { UsageTracker } from "@/services/analytics/UsageTracker";
 import { AudioDecoder } from "@/services/audio/AudioDecoder";
@@ -27,7 +26,6 @@ import {
   Music,
   Gauge,
   UploadCloud,
-  Link,
   FileAudio,
   BookOpen,
   ArrowRight,
@@ -39,24 +37,57 @@ import {
   Split,
   Maximize2,
   VolumeX,
+  Disc,
+  Flame,
 } from "lucide-react";
 
 interface ManualEditorProps {
   onNotify: (msg: string, type?: "success" | "error" | "info") => void;
 }
 
-const DEMO_FILE_URL = "/samples/dj-negoro-angin.mp3";
+export interface DemoTrackItem {
+  id: string;
+  title: string;
+  artist: string;
+  tag: string;
+  badge: string;
+  url: string;
+}
+
+const DEMO_AUDIOS: DemoTrackItem[] = [
+  {
+    id: "fine",
+    title: "DJ I WILL BE FINE",
+    artist: "Wiro x Yogi SJ Remix",
+    tag: "Jedag-Jedug Viral",
+    badge: "TikTok Trending",
+    url: "/samples/DJ%20I%20WILL%20BE%20FINE.mp3",
+  },
+  {
+    id: "negoro",
+    title: "DJ NEGORO ANGIN",
+    artist: "DJ Koplo Viral",
+    tag: "Koplo Bass Boost",
+    badge: "Club Favorite",
+    url: "/samples/DJ%20NEGORO%20ANGIN.mp3",
+  },
+  {
+    id: "xmas",
+    title: "MERRY CHRISTMAS",
+    artist: "Holiday Remix Edit",
+    tag: "Special Holiday",
+    badge: "EDM Mix",
+    url: "/samples/MERRY%20CHRISTMAS.mp3",
+  },
+];
 
 export const ManualEditor: React.FC<ManualEditorProps> = ({ onNotify }) => {
   const { user, quota, consumeQuota, openAuthModal } = useAuth();
 
   // Ingest / Upload state
   const [hasLoadedAudio, setHasLoadedAudio] = useState(false);
-  const [uploadMode, setUploadMode] = useState<"file" | "url">("file");
-  const [audioUrl, setAudioUrl] = useState("");
   const [audioFile, setAudioFile] = useState<File | null>(null);
-  const [isLoadingUrl, setIsLoadingUrl] = useState(false);
-  const [detectedMeta, setDetectedMeta] = useState<{ title: string; author?: string; thumbnail?: string } | null>(null);
+  const [activeDemoId, setActiveDemoId] = useState<string | null>(null);
 
   // Audio Playback Elements & State
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -64,6 +95,14 @@ export const ManualEditor: React.FC<ManualEditorProps> = ({ onNotify }) => {
   const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
   const eqFiltersRef = useRef<BiquadFilterNode[]>([]);
   const gainNodeRef = useRef<GainNode | null>(null);
+  const djFilterNodeRef = useRef<BiquadFilterNode | null>(null);
+  const djBassNodeRef = useRef<BiquadFilterNode | null>(null);
+  const djTrebleNodeRef = useRef<BiquadFilterNode | null>(null);
+
+  // DJ FX Suite
+  const [djFilter, setDjFilter] = useState<number>(0); // -100% LPF to +100% HPF
+  const [djBassBoost, setDjBassBoost] = useState<number>(0); // 0 to 15 dB
+  const [djTrebleBoost, setDjTrebleBoost] = useState<number>(0); // 0 to 12 dB
 
   const initLiveEqGraph = () => {
     if (audioCtxRef.current || !audioRef.current) return;
@@ -74,6 +113,26 @@ export const ManualEditor: React.FC<ManualEditorProps> = ({ onNotify }) => {
 
       const source = ctx.createMediaElementSource(audioRef.current);
       sourceNodeRef.current = source;
+
+      // DJ Filter Sweep Node
+      const djFilterNode = ctx.createBiquadFilter();
+      djFilterNode.type = "allpass";
+      djFilterNode.frequency.value = 1000;
+      djFilterNodeRef.current = djFilterNode;
+
+      // DJ Bass Node
+      const djBass = ctx.createBiquadFilter();
+      djBass.type = "lowshelf";
+      djBass.frequency.value = 75;
+      djBass.gain.value = djBassBoost;
+      djBassNodeRef.current = djBass;
+
+      // DJ Treble Node
+      const djTreble = ctx.createBiquadFilter();
+      djTreble.type = "highshelf";
+      djTreble.frequency.value = 8500;
+      djTreble.gain.value = djTrebleBoost;
+      djTrebleNodeRef.current = djTreble;
 
       const freqs = [60, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
       const filters = freqs.map((freq, i) => {
@@ -96,7 +155,12 @@ export const ManualEditor: React.FC<ManualEditorProps> = ({ onNotify }) => {
       gain.gain.value = Math.min(2.0, volume);
       gainNodeRef.current = gain;
 
-      let lastNode: AudioNode = source;
+      // Chain: source -> djFilter -> djBass -> djTreble -> EQ filters -> gain -> destination
+      source.connect(djFilterNode);
+      djFilterNode.connect(djBass);
+      djBass.connect(djTreble);
+
+      let lastNode: AudioNode = djTreble;
       for (const filter of filters) {
         lastNode.connect(filter);
         lastNode = filter;
@@ -172,6 +236,35 @@ export const ManualEditor: React.FC<ManualEditorProps> = ({ onNotify }) => {
       });
     }
   }, [eqGains]);
+
+  // Sinkronisasi DJ Master FX (Filter Sweep, Sub-Bass 808, High Shimmer) secara real-time
+  useEffect(() => {
+    if (audioCtxRef.current) {
+      if (djFilterNodeRef.current) {
+        if (djFilter === 0) {
+          djFilterNodeRef.current.type = "allpass";
+        } else if (djFilter < 0) {
+          djFilterNodeRef.current.type = "lowpass";
+          const norm = Math.abs(djFilter) / 100;
+          const freq = Math.max(250, 18000 * Math.pow(1 - norm, 2.2));
+          djFilterNodeRef.current.frequency.setTargetAtTime(freq, audioCtxRef.current.currentTime, 0.03);
+          djFilterNodeRef.current.Q.setTargetAtTime(1.8 + norm * 2.0, audioCtxRef.current.currentTime, 0.03);
+        } else {
+          djFilterNodeRef.current.type = "highpass";
+          const norm = djFilter / 100;
+          const freq = Math.min(6000, 30 + 5500 * Math.pow(norm, 2.2));
+          djFilterNodeRef.current.frequency.setTargetAtTime(freq, audioCtxRef.current.currentTime, 0.03);
+          djFilterNodeRef.current.Q.setTargetAtTime(1.8 + norm * 2.0, audioCtxRef.current.currentTime, 0.03);
+        }
+      }
+      if (djBassNodeRef.current) {
+        djBassNodeRef.current.gain.setTargetAtTime(djBassBoost, audioCtxRef.current.currentTime, 0.03);
+      }
+      if (djTrebleNodeRef.current) {
+        djTrebleNodeRef.current.gain.setTargetAtTime(djTrebleBoost, audioCtxRef.current.currentTime, 0.03);
+      }
+    }
+  }, [djFilter, djBassBoost, djTrebleBoost]);
 
   // Estimasi ukuran file hasil ekspor
   const activeDuration = trimEnabled ? Math.max(0.1, trimEnd - trimStart) : duration;
@@ -314,22 +407,22 @@ export const ManualEditor: React.FC<ManualEditorProps> = ({ onNotify }) => {
     }
   };
 
-  // Load Demo Audio
-  const handleLoadDemo = () => {
-    const demoTitle = "DJ NEGORO ANGIN";
-    setAudioTitle(demoTitle);
+  // 1-Click Load from 3 Selectable Demo Audio Tracks
+  const handleLoadDemoTrack = (demo: DemoTrackItem) => {
+    setActiveDemoId(demo.id);
+    setAudioTitle(demo.title);
     setAudioFile(null);
-    setSourceAudioUrl(DEMO_FILE_URL);
+    setSourceAudioUrl(demo.url);
     if (audioRef.current) {
-      audioRef.current.src = DEMO_FILE_URL;
+      audioRef.current.src = demo.url;
       audioRef.current.load();
     }
     setDuration(0);
     setCurrentTime(0);
     setIsPlaying(false);
     setHasLoadedAudio(true);
-    decodeAndSetBuffer(DEMO_FILE_URL);
-    onNotify("Demo Audio 'DJ NEGORO ANGIN' siap diedit & di-tuning!", "success");
+    decodeAndSetBuffer(demo.url);
+    onNotify(`Demo Audio "${demo.title}" berhasil dimuat ke Manual Editor!`, "success");
   };
 
   // File Upload Ingest
@@ -337,6 +430,7 @@ export const ManualEditor: React.FC<ManualEditorProps> = ({ onNotify }) => {
     if (e.target.files && e.target.files[0]) {
       const f = e.target.files[0];
       setAudioFile(f);
+      setActiveDemoId(null);
       setAudioTitle(f.name);
       const url = URL.createObjectURL(f);
       setSourceAudioUrl(url);
@@ -352,64 +446,6 @@ export const ManualEditor: React.FC<ManualEditorProps> = ({ onNotify }) => {
     }
   };
 
-  // URL Ingest Parser (YouTube, TikTok, Direct MP3/WAV/OGG)
-  const handleUrlLoad = async (e?: React.FormEvent, overrideUrl?: string) => {
-    if (e) e.preventDefault();
-    const rawUrl = (overrideUrl || audioUrl).trim();
-    if (!rawUrl) return;
-
-    setIsLoadingUrl(true);
-    try {
-      const isDirectAudio = /\.(mp3|wav|ogg|flac|m4a|aac)(\?.*)?$/i.test(rawUrl);
-      const isVideoPlatform = /(?:youtu\.be|youtube\.com|tiktok\.com)/i.test(rawUrl);
-
-      // Gunakan proxy stream audio asli untuk YouTube atau direct audio URL
-      const playableUrl = rawUrl.startsWith("http") && !rawUrl.includes(window.location.hostname)
-        ? `/api/fetch-audio?url=${encodeURIComponent(rawUrl)}`
-        : rawUrl;
-
-      const rawGuess = rawUrl.split("/").pop()?.split("?")[0] || "Stream_Editor_Audio.mp3";
-      const titleToUse = detectedMeta?.title
-        ? `${detectedMeta.title}.mp3`
-        : isVideoPlatform
-        ? "YouTube_Stream_Audio.mp3"
-        : rawGuess;
-
-      setSourceAudioUrl(playableUrl);
-      setAudioTitle(titleToUse);
-      setAudioFile(null);
-      setHasLoadedAudio(true);
-
-      if (audioRef.current) {
-        audioRef.current.crossOrigin = "anonymous";
-        audioRef.current.src = playableUrl;
-        audioRef.current.onerror = () => {
-          if (isVideoPlatform) {
-            onNotify("YouTube membatasi streaming langsung. Gunakan tombol 'Unduh MP3' lalu upload file ke Manual Editor!", "info");
-          }
-        };
-        audioRef.current.load();
-      }
-      setIsPlaying(false);
-      setCurrentTime(0);
-
-      decodeAndSetBuffer(playableUrl);
-
-      if (isVideoPlatform) {
-        onNotify(`Audio "${titleToUse.replace(/\.mp3$/, '')}" berhasil dimuat ke Manual Editor!`, "success");
-      } else if (isDirectAudio) {
-        onNotify("Audio URL berhasil diekstrak dan dimuat ke Manual Editor!", "success");
-      } else {
-        onNotify("Link media terhubung! Stream audio di-proxy bebas CORS.", "info");
-      }
-    } catch (err: any) {
-      console.error("URL load error:", err);
-      onNotify("Gagal memuat link audio. Pastikan URL publik dapat diakses.", "error");
-    } finally {
-      setIsLoadingUrl(false);
-    }
-  };
-
   const handleEqChange = (index: number, val: number) => {
     const updated = [...eqGains];
     updated[index] = val;
@@ -418,7 +454,10 @@ export const ManualEditor: React.FC<ManualEditorProps> = ({ onNotify }) => {
 
   const resetEq = () => {
     setEqGains([0, 0, 0, 0, 0, 0, 0, 0, 0]);
-    onNotify("Equalizer di-reset ke Flat (0 dB)", "info");
+    setDjFilter(0);
+    setDjBassBoost(0);
+    setDjTrebleBoost(0);
+    onNotify("Equalizer & DJ FX di-reset ke Flat (0 dB)", "info");
   };
 
   // REAL AUDIO EXPORT PIPELINE: Offline DSP Rendering + Export
@@ -454,7 +493,7 @@ export const ManualEditor: React.FC<ManualEditorProps> = ({ onNotify }) => {
 
       setExportProgress(30);
 
-      // Export dengan AudioExporter DSP pipeline
+      // Export dengan AudioExporter DSP pipeline lengkap (termasuk DJ FX)
       const exportResult = await AudioExporter.exportAudio(
         activeBuffer,
         audioTitle || "Joverse_Editor_Audio",
@@ -480,6 +519,9 @@ export const ManualEditor: React.FC<ManualEditorProps> = ({ onNotify }) => {
           channelMode: "original",
           eqGains,
           seamlessLoop,
+          djFilter,
+          djBassBoost,
+          djTrebleBoost,
         },
         {
           format: outputFormat.toLowerCase() as "ogg" | "mp3" | "wav",
@@ -588,134 +630,79 @@ export const ManualEditor: React.FC<ManualEditorProps> = ({ onNotify }) => {
       {/* ── STEP 1: JIKA BELUM ADA AUDIO, TAMPILKAN INGEST BOX ── */}
       {!hasLoadedAudio ? (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          <div className="lg:col-span-7 p-6 rounded-2xl bg-zinc-950/80 border border-white/10 space-y-4 shadow-xl">
+          <div className="lg:col-span-7 p-6 rounded-2xl bg-zinc-950/80 border border-white/10 space-y-5 shadow-xl">
             <div className="flex items-center justify-between pb-3 border-b border-white/5">
               <h2 className="text-xs font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
                 <Upload className="w-4 h-4 text-zinc-300" />
-                <span>Langkah 1: Unggah File Audio untuk Diedit</span>
+                <span>Langkah 1: Unggah File Audio Komputer / 3 Demo</span>
               </h2>
               <span className="text-[10px] font-mono text-zinc-500">Audio Ingest</span>
             </div>
 
-            {/* Ingest Mode Tabs */}
-            <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-zinc-900 border border-white/5">
-              <button
-                type="button"
-                onClick={() => setUploadMode("file")}
-                className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                  uploadMode === "file"
-                    ? "bg-white/15 text-white border border-white/25 shadow-sm"
-                    : "text-zinc-400 hover:text-white"
-                }`}
-              >
-                <FileAudio className="w-4 h-4" />
-                <span>Upload File Komputer</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setUploadMode("url")}
-                className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                  uploadMode === "url"
-                    ? "bg-white/15 text-white border border-white/25 shadow-sm"
-                    : "text-zinc-400 hover:text-white"
-                }`}
-              >
-                <Link className="w-4 h-4" />
-                <span>Input URL Audio</span>
-              </button>
-            </div>
-
-            {uploadMode === "file" ? (
-              <label className="flex flex-col items-center justify-center gap-3 p-10 rounded-xl border-2 border-dashed border-white/15 bg-zinc-900/40 hover:bg-zinc-900/70 hover:border-white/30 transition-all cursor-pointer text-center">
-                <input
-                  type="file"
-                  accept="audio/*"
-                  onChange={handleFileSelect}
-                  className="hidden"
-                />
-                <div className="w-14 h-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-zinc-300 shadow-lg">
-                  <UploadCloud className="w-7 h-7" />
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-white">
-                    Pilih atau Seret File Audio ke Sini
-                  </p>
-                  <p className="text-xs text-zinc-500 mt-1">
-                    Mendukung MP3, WAV, OGG, FLAC, M4A &middot; Maksimal 100 MB
-                  </p>
-                </div>
-              </label>
-            ) : (
-              <div className="space-y-4">
-                <form onSubmit={handleUrlLoad} className="space-y-3">
-                  <div>
-                    <label className="text-xs font-semibold text-zinc-300 mb-1.5 block">
-                      URL Video YouTube / TikTok / Direct Audio (MP3/WAV/OGG):
-                    </label>
-                    <div className="flex gap-2">
-                      <input
-                        type="url"
-                        value={audioUrl}
-                        onChange={(e) => setAudioUrl(e.target.value)}
-                        placeholder="Paste link YouTube, TikTok, atau link file audio (.mp3, .wav)..."
-                        className="relative z-20 pointer-events-auto select-text flex-1 px-3.5 py-2.5 rounded-xl bg-zinc-900 border border-white/10 text-xs text-white placeholder-zinc-500 focus:border-white/40 focus:outline-none"
-                      />
-                      <button
-                        type="submit"
-                        disabled={isLoadingUrl}
-                        className="px-4 py-2 bg-white text-zinc-950 font-bold text-xs rounded-xl cursor-pointer hover:bg-zinc-200 transition-all shadow-md active:scale-95 shrink-0 disabled:opacity-50"
-                      >
-                        {isLoadingUrl ? "Memuat..." : "Muat Audio"}
-                      </button>
-                    </div>
-                  </div>
-                </form>
-
-                {audioUrl && (
-                  <div className="space-y-2">
-                    <VideoUrlPreview
-                      url={audioUrl}
-                      onClear={() => {
-                        setAudioUrl("");
-                        setDetectedMeta(null);
-                      }}
-                      onNotify={onNotify}
-                      onMetaLoaded={(meta) => {
-                        setDetectedMeta(meta);
-                        if (meta.title) {
-                          setAudioTitle(`${meta.title}.mp3`);
-                        }
-                      }}
-                    />
-                    <div className="flex items-center justify-between p-3 rounded-xl bg-white/[0.04] border border-white/10 text-xs">
-                      <span className="text-zinc-300">
-                        Ingin mengedit frekuensi audio dari link ini dengan Equalizer 9-Band?
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleUrlLoad(undefined, audioUrl)}
-                        className="px-3 py-1.5 rounded-lg bg-white text-zinc-950 font-bold text-[11px] hover:bg-zinc-200 transition-all cursor-pointer shadow"
-                      >
-                        Gunakan Audio Ini
-                      </button>
-                    </div>
-                  </div>
-                )}
+            {/* File Upload Dropzone */}
+            <label className="flex flex-col items-center justify-center gap-3 p-9 rounded-xl border-2 border-dashed border-white/15 bg-zinc-900/40 hover:bg-zinc-900/70 hover:border-white/30 transition-all cursor-pointer text-center">
+              <input
+                type="file"
+                accept="audio/*"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+              <div className="w-14 h-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-zinc-300 shadow-lg">
+                <UploadCloud className="w-7 h-7" />
               </div>
-            )}
+              <div>
+                <p className="text-sm font-bold text-white">
+                  Pilih atau Seret File Audio Komputer ke Sini
+                </p>
+                <p className="text-xs text-zinc-500 mt-1">
+                  Mendukung MP3, WAV, OGG, FLAC, M4A &middot; Maksimal 100 MB &middot; 100% lokal di browser
+                </p>
+              </div>
+            </label>
 
-            {/* Quick Demo Button */}
-            <div className="pt-2 flex items-center justify-between text-xs text-zinc-400">
-              <span>Ingin mencoba tanpa upload file sendiri?</span>
-              <button
-                type="button"
-                onClick={handleLoadDemo}
-                className="text-white font-bold hover:underline cursor-pointer flex items-center gap-1 font-mono"
-              >
-                <span>Coba Demo DJ NEGORO ANGIN</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
+            {/* 3 Selectable Demo Audio Tracks */}
+            <div className="space-y-2.5 pt-2 border-t border-white/5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-zinc-300 flex items-center gap-1.5 font-mono">
+                  <Music className="w-3.5 h-3.5 text-zinc-400" />
+                  <span>Atau Uji Coba dengan 3 Audio Demo:</span>
+                </span>
+                <span className="text-[11px] text-zinc-500 font-mono">1-Klik Muat</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                {DEMO_AUDIOS.map((demo) => {
+                  const isSelected = activeDemoId === demo.id && !audioFile;
+                  return (
+                    <button
+                      key={demo.id}
+                      type="button"
+                      onClick={() => handleLoadDemoTrack(demo)}
+                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer relative overflow-hidden group ${
+                        isSelected
+                          ? "bg-white/15 border-white text-white shadow-lg ring-1 ring-white/30"
+                          : "bg-zinc-900/70 border-white/10 text-zinc-300 hover:border-white/30 hover:bg-zinc-900"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="px-2 py-0.5 rounded bg-white/10 text-[9px] font-mono font-bold text-zinc-300 border border-white/10">
+                          {demo.badge}
+                        </span>
+                        <Disc className={`w-3.5 h-3.5 ${isSelected ? "text-white animate-spin" : "text-zinc-500 group-hover:text-white"}`} />
+                      </div>
+                      <div className="text-xs font-bold text-white truncate font-['Sora']">
+                        {demo.title}
+                      </div>
+                      <div className="text-[10px] text-zinc-400 truncate mt-0.5">
+                        {demo.artist}
+                      </div>
+                      <div className="text-[9px] text-zinc-500 mt-1 line-clamp-1">
+                        {demo.tag}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
@@ -935,6 +922,95 @@ export const ManualEditor: React.FC<ManualEditorProps> = ({ onNotify }) => {
                   onChange={(e) => setFadeOutDuration(parseFloat(e.target.value))}
                   className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-white disabled:opacity-40"
                 />
+              </div>
+            </div>
+          </div>
+
+          {/* DJ MASTER FX & COLOR FILTER SWEEP */}
+          <div className="p-6 rounded-2xl bg-zinc-950/80 border border-white/10 space-y-4 shadow-xl">
+            <div className="flex items-center justify-between pb-3 border-b border-white/5">
+              <h2 className="text-xs font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
+                <Flame className="w-4 h-4 text-amber-400" />
+                <span>DJ Master Suite &amp; Pioneer Color Filter Sweep</span>
+              </h2>
+              <span className="text-[10px] font-mono text-zinc-400">
+                Respon Seketika Pada Player
+              </span>
+            </div>
+
+            {/* DJ Color Filter Sweep (-100% LPF to +100% HPF) */}
+            <div className="space-y-1.5 p-3.5 rounded-xl bg-zinc-900/80 border border-white/10">
+              <div className="flex justify-between text-xs font-mono">
+                <span className="text-zinc-200 font-bold flex items-center gap-1.5">
+                  <Disc className="w-3.5 h-3.5 text-zinc-400" />
+                  <span>DJ Pioneer Filter Sweep:</span>
+                </span>
+                <span className="text-white font-bold">
+                  {djFilter === 0
+                    ? "Flat / Netral"
+                    : djFilter < 0
+                    ? `Low-Pass Filter (Muffled) ${djFilter}%`
+                    : `High-Pass Filter (Tension) +${djFilter}%`}
+                </span>
+              </div>
+              <input
+                type="range"
+                min="-100"
+                max="100"
+                step="1"
+                value={djFilter}
+                onChange={(e) => setDjFilter(parseInt(e.target.value))}
+                className="w-full h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-white"
+              />
+              <div className="flex justify-between text-[10px] font-mono text-zinc-500">
+                <span>◀ Low-Pass (Redam High)</span>
+                <span>0 (Netral)</span>
+                <span>High-Pass (Potong Bass) ▶</span>
+              </div>
+            </div>
+
+            {/* DJ 808 Sub-Bass Punch & High Shimmer Air */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5 p-3.5 rounded-xl bg-zinc-900/80 border border-white/10">
+                <div className="flex justify-between text-xs font-mono">
+                  <span className="text-zinc-300">808 Sub-Bass Punch:</span>
+                  <span className="text-white font-bold">+{djBassBoost} dB</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="15"
+                  step="0.5"
+                  value={djBassBoost}
+                  onChange={(e) => setDjBassBoost(parseFloat(e.target.value))}
+                  className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-white"
+                />
+                <div className="flex justify-between text-[10px] font-mono text-zinc-500">
+                  <span>0 dB</span>
+                  <span>+6 dB</span>
+                  <span>+15 dB (Sub Drop)</span>
+                </div>
+              </div>
+
+              <div className="space-y-1.5 p-3.5 rounded-xl bg-zinc-900/80 border border-white/10">
+                <div className="flex justify-between text-xs font-mono">
+                  <span className="text-zinc-300">High Air &amp; Shimmer:</span>
+                  <span className="text-white font-bold">+{djTrebleBoost} dB</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="12"
+                  step="0.5"
+                  value={djTrebleBoost}
+                  onChange={(e) => setDjTrebleBoost(parseFloat(e.target.value))}
+                  className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-white"
+                />
+                <div className="flex justify-between text-[10px] font-mono text-zinc-500">
+                  <span>0 dB</span>
+                  <span>+6 dB</span>
+                  <span>+12 dB (Crisp Air)</span>
+                </div>
               </div>
             </div>
           </div>
