@@ -469,8 +469,12 @@ export const Bypass: React.FC<BypassProps> = ({ onNotify }) => {
     }
   };
 
-  // 1-Click Load from 3 Selectable Demo Audio Tracks
+  // 1-Click Load from 3 Selectable Demo Audio Tracks (Auto-play & toggle)
   const handleLoadDemoTrack = (demo: DemoAudioItem) => {
+    if (activeDemoId === demo.id && !selectedFile && audioRef.current) {
+      togglePlaySource();
+      return;
+    }
     setActiveDemoId(demo.id);
     setAudioFileName(`${demo.title}.mp3`);
     setSelectedFile(null);
@@ -478,12 +482,18 @@ export const Bypass: React.FC<BypassProps> = ({ onNotify }) => {
     if (audioRef.current) {
       audioRef.current.src = demo.url;
       audioRef.current.load();
+      initLiveDspGraph();
+      if (audioCtxRef.current && audioCtxRef.current.state === "suspended") {
+        audioCtxRef.current.resume();
+      }
+      audioRef.current.play().then(() => setIsPlaying(true)).catch((err) => {
+        console.warn("Autoplay notice:", err);
+      });
     }
     setDuration(0);
     setCurrentTime(0);
-    setIsPlaying(false);
     setHasLoadedAudio(true);
-    onNotify(`Demo Audio "${demo.title}" berhasil dimuat! Siap di-play & di-bypass.`, "success");
+    onNotify(`Demo Audio "${demo.title}" dimuat & langsung diputar!`, "success");
   };
 
   // File Upload
@@ -764,8 +774,21 @@ sound:Play()`;
                       <div className="text-[10px] text-zinc-400 truncate mt-0.5">
                         {demo.artist}
                       </div>
-                      <div className="text-[9px] text-zinc-500 mt-1 line-clamp-1">
-                        {demo.tag}
+                      <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-white/5">
+                        <span className="text-[9px] text-zinc-500 truncate">{demo.tag}</span>
+                        <span className="flex items-center gap-1 text-[10px] font-bold text-white shrink-0 ml-1">
+                          {isSelected && isPlaying ? (
+                            <>
+                              <Pause className="w-2.5 h-2.5 fill-current text-emerald-400" />
+                              <span className="text-emerald-400">Putar</span>
+                            </>
+                          ) : (
+                            <>
+                              <Play className="w-2.5 h-2.5 fill-current text-zinc-400 group-hover:text-white" />
+                              <span className="text-zinc-400 group-hover:text-white">Play</span>
+                            </>
+                          )}
+                        </span>
                       </div>
                     </button>
                   );

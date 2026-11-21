@@ -120,6 +120,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
       }
 
+      // 3. Hapus Album Showcase (Khusus Owner/Admin)
+      if (action === "delete_album") {
+        const { albumId } = body;
+        if (!albumId) {
+          return res.status(400).json({ error: "albumId diperlukan untuk menghapus album." });
+        }
+
+        const initialLength = globalAlbums.length;
+        globalAlbums = globalAlbums.filter((a) => a.id !== albumId);
+
+        return res.status(200).json({
+          success: true,
+          message: "Album berhasil dihapus dari galeri server.",
+          deletedId: albumId,
+          remainingCount: globalAlbums.length,
+        });
+      }
+
       return res.status(400).json({ error: "Aksi tidak dikenal." });
     } catch (err: any) {
       console.error("Gallery API error:", err);

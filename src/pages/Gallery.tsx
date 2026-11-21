@@ -212,6 +212,27 @@ export const Gallery: React.FC<GalleryProps> = ({ onNotify }) => {
     }
   };
 
+  // Handle Delete Single Photo from Album (Owner/Admin)
+  const handleDeleteCurrentPhoto = () => {
+    if (!activeAlbum) return;
+    if (activeAlbum.images.length <= 1) {
+      setAlbumToDelete(activeAlbum);
+      return;
+    }
+    const updatedImages = activeAlbum.images.filter((_, idx) => idx !== activeImageIndex);
+    const updatedAlbum = { ...activeAlbum, images: updatedImages };
+    setActiveAlbum(updatedAlbum);
+    setActiveImageIndex((prev) => Math.max(0, prev - 1));
+    setAlbums((prev) => {
+      const updated = prev.map((a) => (a.id === activeAlbum.id ? updatedAlbum : a));
+      try {
+        localStorage.setItem(LOCAL_STORAGE_GALLERY_KEY, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+    onNotify?.("Foto berhasil dihapus dari showcase album!", "success");
+  };
+
   // Handle Delete Album (Owner / Admin only)
   const handleDeleteAlbum = async (albumId: string) => {
     setIsDeleting(true);
@@ -500,49 +521,56 @@ export const Gallery: React.FC<GalleryProps> = ({ onNotify }) => {
                 key={album.id}
                 className="group rounded-2xl bg-zinc-950/80 border border-white/10 hover:border-white/25 transition-all overflow-hidden flex flex-col shadow-xl hover:shadow-2xl"
               >
-                {/* Main Cover Image Container */}
+                {/* Main Cover Image Container (Full Image Visible, No Cropping + Ambient Backdrop) */}
                 <div
-                  className="relative aspect-video w-full bg-zinc-900 cursor-pointer overflow-hidden"
+                  className="relative aspect-video w-full bg-zinc-950 cursor-pointer overflow-hidden flex items-center justify-center group"
                   onClick={() => {
                     setActiveAlbum(album);
                     setActiveImageIndex(0);
                   }}
                 >
+                  {/* Blurred Ambient Backdrop */}
+                  <img
+                    src={coverImage}
+                    alt=""
+                    className="absolute inset-0 w-full h-full object-cover blur-xl opacity-35 scale-125 pointer-events-none"
+                  />
+                  {/* Full Uncropped High-Res Image */}
                   <img
                     src={coverImage}
                     alt={album.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    className="relative z-10 max-h-full max-w-full object-contain group-hover:scale-[1.03] transition-transform duration-300 drop-shadow-2xl select-none"
                     loading="lazy"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
+                  <div className="absolute inset-0 z-10 bg-gradient-to-t from-black/80 via-transparent to-black/20 pointer-events-none" />
 
                   {/* Photo Count Badge */}
-                  <div className="absolute top-3 left-3 px-2.5 py-1 rounded-lg bg-black/70 backdrop-blur-md border border-white/15 text-[11px] font-mono font-bold text-white flex items-center gap-1.5 shadow">
+                  <div className="absolute top-3 left-3 z-20 px-2.5 py-1 rounded-lg bg-black/70 backdrop-blur-md border border-white/15 text-[11px] font-mono font-bold text-white flex items-center gap-1.5 shadow">
                     <Images className="w-3.5 h-3.5 text-zinc-300" />
                     <span>{album.images.length} Gambar</span>
                   </div>
 
                   {/* Category Pill */}
-                  <div className="absolute top-3 right-3 px-2.5 py-1 rounded-lg bg-white/15 backdrop-blur-md border border-white/20 text-[10px] font-bold text-white shadow uppercase font-mono">
+                  <div className="absolute top-3 right-3 z-20 px-2.5 py-1 rounded-lg bg-white/15 backdrop-blur-md border border-white/20 text-[10px] font-bold text-white shadow uppercase font-mono">
                     {album.category}
                   </div>
 
                   {/* Hover Overlay Icon */}
-                  <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30 backdrop-blur-[2px]">
+                  <div className="absolute inset-0 z-20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30 backdrop-blur-[2px]">
                     <span className="px-3 py-1.5 rounded-xl bg-white text-zinc-950 font-bold text-xs flex items-center gap-1.5 shadow-xl">
                       <Maximize2 className="w-3.5 h-3.5" />
-                      <span>Buka Showcase</span>
+                      <span>Buka Showcase (Full)</span>
                     </span>
                   </div>
                 </div>
 
-                {/* Mini Preview Thumbnails (Up to 3 thumbnails + Extra count) */}
+                {/* Mini Preview Thumbnails (Full Contain Preview) */}
                 {album.images.length > 1 && (
                   <div className="grid grid-cols-4 gap-1.5 p-2 bg-zinc-900/60 border-b border-white/5">
                     {previewThumbnails.map((img, idx) => (
                       <div
                         key={img.id}
-                        className="aspect-video rounded-lg overflow-hidden cursor-pointer hover:opacity-80 transition-opacity border border-white/5"
+                        className="relative aspect-video rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition-opacity border border-white/10 bg-zinc-950 flex items-center justify-center"
                         onClick={() => {
                           setActiveAlbum(album);
                           setActiveImageIndex(idx + 1);
@@ -550,8 +578,13 @@ export const Gallery: React.FC<GalleryProps> = ({ onNotify }) => {
                       >
                         <img
                           src={img.url}
+                          alt=""
+                          className="absolute inset-0 w-full h-full object-cover blur-md opacity-30 pointer-events-none"
+                        />
+                        <img
+                          src={img.url}
                           alt="preview"
-                          className="w-full h-full object-cover"
+                          className="relative z-10 max-h-full max-w-full object-contain"
                           loading="lazy"
                         />
                       </div>
@@ -640,23 +673,23 @@ export const Gallery: React.FC<GalleryProps> = ({ onNotify }) => {
         </div>
       )}
 
-      {/* ── FULLSCREEN LIGHTBOX / CAROUSEL MODAL ── */}
+      {/* ── FULLSCREEN LIGHTBOX / CAROUSEL MODAL (EXPANSIVE HIGH-RES DISPLAY) ── */}
       {activeAlbum && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-3 sm:p-6"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-xl p-2 sm:p-4 animate-fadeIn"
           onClick={() => setActiveAlbum(null)}
         >
           <div
-            className="relative w-full max-w-5xl bg-zinc-950 border border-white/15 rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh]"
+            className="relative w-full max-w-[96vw] xl:max-w-7xl bg-zinc-950 border border-white/20 rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[96vh]"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Lightbox Header */}
-            <div className="px-5 py-3.5 bg-zinc-900/80 border-b border-white/10 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2 truncate">
-                <span className="text-xs font-mono font-bold text-white px-2 py-0.5 rounded bg-white/10 border border-white/15">
+            <div className="px-5 py-3.5 bg-zinc-900/90 border-b border-white/10 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5 truncate">
+                <span className="text-xs font-mono font-bold text-white px-2.5 py-1 rounded-md bg-white/10 border border-white/15">
                   {activeImageIndex + 1} / {activeAlbum.images.length}
                 </span>
-                <h4 className="text-sm font-bold text-white truncate font-['Sora']">
+                <h4 className="text-sm sm:text-base font-bold text-white truncate font-['Sora']">
                   {activeAlbum.title}
                 </h4>
               </div>
@@ -665,10 +698,10 @@ export const Gallery: React.FC<GalleryProps> = ({ onNotify }) => {
                 <button
                   type="button"
                   onClick={() => handleToggleLike(activeAlbum.id)}
-                  className={`px-3 py-1 rounded-lg flex items-center gap-1.5 font-mono text-xs font-bold transition-all cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 font-mono text-xs font-bold transition-all cursor-pointer ${
                     activeAlbum.likedUserIds.includes(currentUserId)
                       ? "bg-rose-500/20 text-rose-400 border border-rose-500/40"
-                      : "bg-white/5 text-zinc-300 border border-white/10"
+                      : "bg-white/5 text-zinc-300 border border-white/10 hover:text-white"
                   }`}
                 >
                   <Heart
@@ -680,32 +713,55 @@ export const Gallery: React.FC<GalleryProps> = ({ onNotify }) => {
                 </button>
 
                 {isOwnerOrAdmin && (
-                  <button
-                    type="button"
-                    onClick={() => setAlbumToDelete(activeAlbum)}
-                    className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-400 hover:bg-rose-500/10 transition-all cursor-pointer border border-transparent hover:border-rose-500/20"
-                    title="Hapus Album Ini"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <>
+                    {activeAlbum.images.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={handleDeleteCurrentPhoto}
+                        className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-400 hover:bg-rose-500/10 transition-all cursor-pointer border border-transparent hover:border-rose-500/20 flex items-center gap-1 text-xs"
+                        title="Hapus foto saat ini dari album"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline font-mono text-[11px]">Hapus Foto</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => setAlbumToDelete(activeAlbum)}
+                      className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-400 hover:bg-rose-500/10 transition-all cursor-pointer border border-transparent hover:border-rose-500/20 flex items-center gap-1 text-xs"
+                      title="Hapus seluruh album ini"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline font-mono text-[11px]">Hapus Album</span>
+                    </button>
+                  </>
                 )}
 
                 <button
                   type="button"
                   onClick={() => setActiveAlbum(null)}
                   className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-white/10 transition-all cursor-pointer"
+                  title="Tutup (Esc)"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
 
-            {/* Main Image Display */}
-            <div className="relative flex-1 bg-black flex items-center justify-center overflow-hidden min-h-[320px] sm:min-h-[460px]">
+            {/* Main Image Display (Maximum Full Resolution, 100% Uncropped) */}
+            <div className="relative flex-1 bg-black/90 flex items-center justify-center overflow-auto p-2 sm:p-4 min-h-[360px] sm:min-h-[520px]">
+              {/* Blurred Ambient Glow behind ultra-wide screenshots */}
+              <img
+                src={activeAlbum.images[activeImageIndex]?.url}
+                alt=""
+                className="absolute inset-0 w-full h-full object-cover blur-2xl opacity-20 pointer-events-none"
+              />
+
               <img
                 src={activeAlbum.images[activeImageIndex]?.url}
                 alt={activeAlbum.images[activeImageIndex]?.caption || "Showcase Photo"}
-                className="max-h-[70vh] w-auto max-w-full object-contain select-none transition-all"
+                className="relative z-10 max-h-[80vh] w-auto max-w-full object-contain select-none transition-all drop-shadow-2xl rounded-lg"
               />
 
               {/* Prev Button */}
@@ -716,9 +772,9 @@ export const Gallery: React.FC<GalleryProps> = ({ onNotify }) => {
                     prev > 0 ? prev - 1 : activeAlbum.images.length - 1
                   )
                 }
-                className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center border border-white/20 transition-all cursor-pointer"
+                className="absolute left-3 top-1/2 -translate-y-1/2 z-20 w-11 h-11 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center justify-center border border-white/20 transition-all cursor-pointer shadow-2xl"
               >
-                <ChevronLeft className="w-5 h-5" />
+                <ChevronLeft className="w-6 h-6" />
               </button>
 
               {/* Next Button */}
@@ -729,9 +785,9 @@ export const Gallery: React.FC<GalleryProps> = ({ onNotify }) => {
                     prev < activeAlbum.images.length - 1 ? prev + 1 : 0
                   )
                 }
-                className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center border border-white/20 transition-all cursor-pointer"
+                className="absolute right-3 top-1/2 -translate-y-1/2 z-20 w-11 h-11 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center justify-center border border-white/20 transition-all cursor-pointer shadow-2xl"
               >
-                <ChevronRight className="w-5 h-5" />
+                <ChevronRight className="w-6 h-6" />
               </button>
             </div>
 

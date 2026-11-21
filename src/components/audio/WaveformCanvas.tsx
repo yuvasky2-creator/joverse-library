@@ -716,12 +716,12 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
         </div>
 
         {/* Right: Master Volume + Preview + Export CTA */}
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-3 shrink-0 ml-auto">
           {/* Master Volume Slider */}
           {onVolumeChange && (
-            <div className="flex items-center gap-2">
-              <Volume2 className="w-3.5 h-3.5 text-[var(--color-text-muted)]" />
-              <div className="w-20 sm:w-24">
+            <div className="flex items-center gap-2.5 bg-white/[0.04] px-3 py-1.5 rounded-xl border border-white/10 shrink-0">
+              <Volume2 className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+              <div className="w-18 sm:w-24">
                 <input
                   type="range"
                   min="0"
@@ -731,9 +731,10 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
                   onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
                   disabled={duration === 0}
                   title={`Volume Master: ${Math.round(volume * 100)}%`}
+                  className="w-full cursor-pointer accent-[#00d4ff]"
                 />
               </div>
-              <span className="font-mono text-xs text-[#00d4ff] font-bold min-w-[32px]">
+              <span className="font-mono text-xs text-[#00d4ff] font-bold min-w-[36px] text-right">
                 {Math.round(volume * 100)}%
               </span>
             </div>
@@ -741,7 +742,7 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
 
           {/* Mode Switcher */}
           {onPreviewModeChange && (
-            <div className="flex items-center p-0.5 rounded-full bg-[rgba(10,14,23,0.9)] border border-[rgba(255,255,255,0.12)]">
+            <div className="flex items-center p-0.5 rounded-full bg-[rgba(10,14,23,0.9)] border border-[rgba(255,255,255,0.12)] shrink-0">
               <button
                 type="button"
                 onClick={() => onPreviewModeChange("original")}
@@ -775,7 +776,7 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
               type="button"
               onClick={onExportClick}
               disabled={duration === 0}
-              className="btn-primary !py-2 !px-4 !text-xs shadow-[0_0_20px_rgba(0,212,255,0.4)] active:scale-95 cursor-pointer"
+              className="btn-primary !py-2 !px-4 !text-xs shadow-[0_0_20px_rgba(0,212,255,0.4)] active:scale-95 cursor-pointer shrink-0 ml-1"
             >
               <Download className="w-3.5 h-3.5" />
               <span>Ekspor</span>
